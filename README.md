@@ -44,11 +44,12 @@ juste-des-ventilateurs/
 │   ├── normalizer.py           # Parsing payload → schéma unifié (4 types de messages)
 │   └── dataset_exporter.py     # Export Parquet partitionné par machine/épisode
 │
-├── features/                   # Ingénierie des features temporelles
-│   ├── temporal.py             # Dérivées de température, rolling means
-│   ├── contextual.py           # Durée en zone chaude, historique pannes
-│   ├── energy.py               # Features énergétiques et PUE
-│   └── labeler.py              # Labels failure_60s, hot_30s, action_class
+├── features/                   # Ingénierie des features temporelles ✅
+│   ├── temporal.py             # Dérivées de température, rolling means, marge shutdown
+│   ├── contextual.py           # Durée zone chaude, compteurs incidents, pannes actives
+│   ├── energy.py               # Puissance fans (loi cubique), PUE, ratio énergie
+│   ├── labeler.py              # Labels failure_60s/30s, hot_30s, action_class (oracle)
+│   └── pipeline.py             # Pipeline complet : brut → features + labels (CLI)
 │
 ├── models/
 │   ├── failure_prediction/     # Modèles d'anticipation de pannes
@@ -155,11 +156,20 @@ python -m ingest.mqtt_subscriber --continuous --episode 001
 pytest tests/ -v
 ```
 
+### Construire les features
+
+```bash
+python -m features.pipeline \
+  --input data/raw/episode=001 \
+  --output data/processed/episode=001 \
+  --config data/raw/episode=001/metadata.json
+```
+
 ### Entraîner les modèles
 
 ```bash
-# Feature engineering
-python -m features.pipeline --input data/raw/episode_01 --output data/processed/episode_01
+# Feature engineering (déjà fait ci-dessus)
+python -m features.pipeline --input data/raw/episode=001 --output data/processed/episode=001
 
 # Entraîner le modèle prédictif
 python -m models.failure_prediction.train --model gradient_boosting --data data/processed/

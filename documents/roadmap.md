@@ -84,31 +84,28 @@ python -m ingest.mqtt_subscriber --continuous --episode 001
 
 ### Tâches
 
-- [ ] Implémenter `features/temporal.py` : features temps réel
-  - Températures actuelles, dérivées (Δt sur 5s, 15s, 30s)
-  - Marge au shutdown : `margin_c = t_shutdown - temperature_c`
-  - Rolling means de charge et température (fenêtres 30s, 60s, 120s)
-  - Variance des RPM et coefficient de variation
-- [ ] Implémenter `features/contextual.py` : features contextuelles
-  - Durée passée en zone chaude (> 80% du seuil)
-  - Indicateurs de défaut/degraded récents (flags binaires)
-  - Historique des changements de consigne ventilateur
-  - Nombre de cycles shutdown/recovery
-- [ ] Implémenter `features/energy.py` : features énergétiques
-  - Puissance instantanée et cumulée
-  - Coût estimé avec PUE (Power Usage Effectiveness)
-  - Ratio puissance_fans / puissance_totale
-- [ ] Implémenter `features/labeler.py` : étiquetage supervisé
-  - `failure_60s` : 1 si `degraded` ou `off` (overheat) dans les 60s suivantes
-  - `failure_30s` : 1 si incident dans les 30s suivantes
-  - `hot_30s` : 1 si température > seuil critique dans les 30s
-  - `action_label` : consigne ventilateur optimale (pour apprentissage supervisé du contrôleur)
-- [ ] Notebook d'analyse exploratoire des features : `notebooks/02_feature_analysis.ipynb`
+- [x] `features/temporal.py` : dérivées de température (5s/15s/30s), rolling means, marge au shutdown, RPM variance/CV
+- [x] `features/contextual.py` : durée en zone chaude, compteurs shutdowns/degraded, indicateurs de pannes, changements de consigne RPM, flag récupération
+- [x] `features/energy.py` : puissance fans (loi cubique RPM³), fan_energy_ratio, pue_estimated, energy_fans_kwh_cumulated
+- [x] `features/labeler.py` : failure_60s / failure_30s / hot_30s (forward-looking), time_to_failure_s, optimal_rpm / action_class
+- [x] `features/pipeline.py` : pipeline complet CLI, traitement multi-machine, export Parquet
+- [x] `tests/test_features.py` : 28 tests unitaires
+- [ ] `notebooks/02_feature_analysis.ipynb` : analyse exploratoire interactive
 
-### Livrables
-- `features/` : module complet
-- `data/processed/` : datasets avec features et labels
-- `notebooks/02_feature_analysis.ipynb`
+### Livrables ✅
+- `features/temporal.py`, `features/contextual.py`, `features/energy.py`
+- `features/labeler.py`, `features/pipeline.py`
+- `tests/test_features.py`
+
+### Commandes
+```bash
+python -m features.pipeline \
+  --input data/raw/episode=001 \
+  --output data/processed/episode=001 \
+  --config data/raw/episode=001/metadata.json
+
+pytest tests/test_features.py -v
+```
 
 ---
 
