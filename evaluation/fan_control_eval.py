@@ -12,6 +12,8 @@ Usage :
 """
 from __future__ import annotations
 
+from evaluation import _compat  # noqa: F401 — force UTF-8 stdout Windows
+
 import argparse
 import json
 import sys
