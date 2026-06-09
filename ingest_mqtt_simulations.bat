@@ -64,65 +64,76 @@ REM  Boucle sur les scenarios
 REM ============================================================
 
 set EPISODE=1
+set SCENARIOS=basic busy_weeks heatwave nominal stress trace_replay
 
-for %%S in (basic busy_weeks heatwave nominal stress trace_replay) do (
-    set SCENARIO=%%S
-    set EP=00!EPISODE!
-    set EP=!EP:~-3!
+REM -- Boucle manuelle sur les scenarios (evite les problemes de globbing CMD)
+call :run_scenario basic
+call :run_scenario busy_weeks
+call :run_scenario heatwave
+call :run_scenario nominal
+call :run_scenario stress
+call :run_scenario trace_replay
+goto :end_loop
 
-    echo --------------------------------------------------
-    echo [Episode !EP!] Scenario : %%S
-    echo --------------------------------------------------
+:run_scenario
+set SCENARIO=%1
+set EP=00%EPISODE%
+set EP=%EP:~-3%
 
-    REM -- Changer le scenario
-    echo [!EP!] Changement du scenario vers %%S...
-    curl -s -X PUT %API%/simulation/scenario ^
-         -H "Content-Type: application/json" ^
-         -d "{\"scenario\": \"%%S\"}" > nul
+echo --------------------------------------------------
+echo [Episode %EP%] Scenario : %SCENARIO%
+echo --------------------------------------------------
 
-    REM -- Verifier l'etat de la simulation et corriger si necessaire
-    echo [!EP!] Verification de l'etat de la simulation...
-    curl -s %API%/simulation/status > %TEMP%\jdv_sim_status.txt 2>nul
-    set /p SIM_STATUS=<%TEMP%\jdv_sim_status.txt
+REM -- Changer le scenario
+echo [%EP%] Changement du scenario vers %SCENARIO%...
+curl -s -X PUT %API%/simulation/scenario ^
+     -H "Content-Type: application/json" ^
+     -d "{\"scenario\": \"%SCENARIO%\"}" > nul
 
-    REM Detecter si en pause (contient "paused": true)
-    echo !SIM_STATUS! | findstr /C:"\"paused\": true" > nul
-    if not errorlevel 1 (
-        echo [!EP!] Simulation en pause — reprise...
-        curl -s -X POST %API%/simulation/resume > nul
-        timeout /t 2 /nobreak > nul
-    ) else (
-        REM Detecter si arretee (contient "running": false)
-        echo !SIM_STATUS! | findstr /C:"\"running\": false" > nul
-        if not errorlevel 1 (
-            echo [!EP!] Simulation arretee — demarrage...
-            curl -s -X POST %API%/simulation/start > nul
-            timeout /t 3 /nobreak > nul
-        ) else (
-            echo [!EP!] Simulation deja en cours.
-        )
-    )
+REM -- Verifier l'etat de la simulation et corriger si necessaire
+echo [%EP%] Verification de l'etat de la simulation...
+curl -s %API%/simulation/status > %TEMP%\jdv_sim_status.txt 2>nul
+set /p SIM_STATUS=<%TEMP%\jdv_sim_status.txt
 
-    REM -- Laisser le scenario se stabiliser (5s)
-    echo [!EP!] Stabilisation du scenario (5s)...
-    timeout /t 5 /nobreak > nul
-
-    REM -- Lancer l'ingestion
-    echo [!EP!] Ingestion MQTT pendant %DURATION%s...
-    python -m ingest.mqtt_subscriber ^
-        --duration %DURATION% ^
-        --episode !EP! ^
-        --scenario %%S
-
-    if errorlevel 1 (
-        echo [!EP!] ERREUR lors de l'ingestion de l'episode !EP! ^(%%S^).
-    ) else (
-        echo [!EP!] Episode !EP! ^(%%S^) ingere avec succes.
-    )
-
-    echo.
-    set /a EPISODE+=1
+echo %SIM_STATUS% | findstr /C:"\"paused\": true" > nul
+if not errorlevel 1 (
+    echo [%EP%] Simulation en pause - reprise...
+    curl -s -X POST %API%/simulation/resume > nul
+    timeout /t 2 /nobreak > nul
+    goto :sim_ready
 )
+echo %SIM_STATUS% | findstr /C:"\"running\": false" > nul
+if not errorlevel 1 (
+    echo [%EP%] Simulation arretee - demarrage...
+    curl -s -X POST %API%/simulation/start > nul
+    timeout /t 3 /nobreak > nul
+    goto :sim_ready
+)
+echo [%EP%] Simulation deja en cours.
+
+:sim_ready
+REM -- Laisser le scenario se stabiliser (5s)
+echo [%EP%] Stabilisation du scenario (5s)...
+timeout /t 5 /nobreak > nul
+
+REM -- Lancer l'ingestion
+echo [%EP%] Ingestion MQTT pendant %DURATION%s...
+python -m ingest.mqtt_subscriber ^
+    --duration %DURATION% ^
+    --episode %EP% ^
+    --scenario %SCENARIO%
+
+if errorlevel 1 (
+    echo [%EP%] ERREUR lors de l'ingestion de l'episode %EP% ^(%SCENARIO%^).
+) else (
+    echo [%EP%] Episode %EP% ^(%SCENARIO%^) ingere avec succes.
+)
+
+echo.
+set /a EPISODE+=1
+goto :eof
+
+:end_loop
 
 REM -- Repasser a vitesse normale a la fin
 echo [Fin] Remise a vitesse x1...

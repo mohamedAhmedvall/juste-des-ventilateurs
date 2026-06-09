@@ -143,11 +143,14 @@ docker compose up -d
 ### Collecter des données
 
 ```bash
-# Collecte MQTT pendant 10 minutes, export Parquet → data/raw/episode=001/
-python -m ingest.mqtt_subscriber --duration 600 --episode 001
+# Collecte automatisée des 6 scénarios à x60 (recommandé)
+ingest_mqtt_simulations.bat
 
-# Collecte continue (mode daemon)
-python -m ingest.mqtt_subscriber --continuous --episode 001
+# Collecte manuelle d'un épisode avec scénario explicite
+python -m ingest.mqtt_subscriber --duration 600 --episode 001 --scenario nominal
+
+# Collecte continue
+python -m ingest.mqtt_subscriber --continuous --episode 001 --scenario stress
 ```
 
 ### Lancer les tests
@@ -159,6 +162,13 @@ pytest tests/ -v
 ### Construire les features
 
 ```bash
+# Feature engineering en batch sur tous les épisodes (recommandé)
+ingest_gen_features.bat
+
+# Épisode spécifique
+ingest_gen_features.bat 003
+
+# Manuel
 python -m features.pipeline \
   --input data/raw/episode=001 \
   --output data/processed/episode=001 \

@@ -1,7 +1,7 @@
 # Roadmap — Juste des Ventilateurs
 
 Projet M2 Data/IA — LaPlateforme_  
-Version 1.1 — Juin 2026
+Version 1.2 — Juin 2026
 
 ---
 
@@ -58,22 +58,27 @@ Phase 6 : Boucle fermée & éval   [Semaine 5-6]
 - [x] `ingest/dataset_exporter.py` : export Parquet partitionné par machine et épisode
   - Fallback CSV si pandas/pyarrow non disponibles
   - `metadata.json` par épisode (scenario, seed, durée, n_records)
-- [x] `tests/test_ingest.py` : 15 tests unitaires (Normalizer + DatasetExporter)
+- [x] `tests/test_ingest.py` : 19 tests unitaires (Normalizer + DatasetExporter)
 - [x] `data/schema.md` : schéma unifié documenté
 - [ ] `notebooks/01_exploration.ipynb` : collecte interactive et visualisation
 
 ### Livrables ✅
 - `ingest/mqtt_subscriber.py`, `ingest/normalizer.py`, `ingest/dataset_exporter.py`
+- `ingest_mqtt_simulations.bat` : collecte automatisée des 6 scénarios à x60
+- `ingest_gen_features.bat` : feature engineering en batch sur tous les épisodes
 - `tests/test_ingest.py`
 - `data/schema.md`
 
 ### Commandes de collecte
 ```bash
-# Collecte pendant 10 minutes
-python -m ingest.mqtt_subscriber --duration 600 --episode 001
+# Collecte multi-scenarios automatisee (recommande)
+ingest_mqtt_simulations.bat
+
+# Collecte manuelle d'un episode
+python -m ingest.mqtt_subscriber --duration 600 --episode 001 --scenario nominal
 
 # Collecte continue
-python -m ingest.mqtt_subscriber --continuous --episode 001
+python -m ingest.mqtt_subscriber --continuous --episode 001 --scenario stress
 ```
 
 ---
@@ -99,6 +104,13 @@ python -m ingest.mqtt_subscriber --continuous --episode 001
 
 ### Commandes
 ```bash
+# Feature engineering en batch (tous les episodes)
+ingest_gen_features.bat
+
+# Episode specifique
+ingest_gen_features.bat 003
+
+# Manuel
 python -m features.pipeline \
   --input data/raw/episode=001 \
   --output data/processed/episode=001 \

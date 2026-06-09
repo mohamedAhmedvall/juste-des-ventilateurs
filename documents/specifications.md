@@ -1,7 +1,7 @@
 # Spécifications Techniques — Juste des Ventilateurs
 
 Projet M2 Data/IA — LaPlateforme_  
-Version 1.0 — Juin 2026
+Version 1.2 — Juin 2026
 
 ---
 
@@ -64,22 +64,42 @@ Version 1.0 — Juin 2026
 
 **Connexion :**
 - Broker : `localhost:1883` (configurable via `.env`)
-- Topics : `cluster/+/machine/+` (wildcard)
-- QoS : 1 (at least once)
-- Reconnexion automatique avec backoff exponentiel
+- Client : `aiomqtt` v2 (async), avec `WindowsSelectorEventLoopPolicy` sur Windows
+- Reconnexion automatique avec backoff exponentiel (1s → 30s)
 
-**Payload reçu (format jumeaux-chauds) :**
+**Topics souscrits (convention jumeaux-chauds) :**
+
+| Topic | QoS | Fréquence | Description |
+|-------|-----|-----------|-------------|
+| `dt/cluster_alpha/+/telemetry` | 0 | 1/s par machine | Snapshot complet machine |
+| `dt/cluster_alpha/+/status` | 1 | événementiel | Changements d'état (on/degraded/off) |
+| `dt/cluster_alpha/+/fault` | 1 | événementiel | Injections et recovery de pannes |
+| `dt/cluster_alpha/summary` | 1 | ~1/5s | KPI agrégés du cluster |
+
+**CLI :**
+```bash
+python -m ingest.mqtt_subscriber --duration 600 --episode 001 --scenario stress
+```
+- `--duration N` : collecte bornée (secondes réelles)
+- `--continuous` : mode daemon sans limite
+- `--episode ID` : identifiant de l'épisode (ex: `001`)
+- `--scenario NOM` : nom du scénario jumeaux-chauds actif (priorité sur `.env` et API)
+
+**Résolution du scénario actif :**
+Priorité : `--scenario CLI` > variable `SCENARIO` dans `.env` > réponse API > `"unknown"`
+
+**Payload reçu (topic telemetry, format jumeaux-chauds) :**
 ```json
 {
-  "id": "machine_01",
-  "role": "compute",
+  "id": "srv-worker-01",
+  "role": "worker",
   "status": "on",
   "temperature_c": 67.3,
   "power_w": 342.1,
   "energy_kwh_cumulated": 1.23,
-  "fans": [{"idx": 0, "rpm": 2800, "mode": "auto"}, ...],
-  "sensors": {"s1": {"temp_c": 67.8, "bias_c": 0.5}, ...},
-  "faults": [{"type": "fan_failure", "remaining_s": 12.3, "magnitude": 1.0}]
+  "fans": [{"idx": 0, "rpm": 2800, "mode": "auto"}, {"idx": 1, "rpm": 2750, "mode": "auto"}],
+  "sensors": {"s1": {"temp_c": 67.8, "bias_c": 0.5}, "s2": {"temp_c": 66.9, "bias_c": -0.3}},
+  "faults": []
 }
 ```
 
@@ -107,21 +127,44 @@ Version 1.0 — Juin 2026
 
 ### 3.3 Dataset Exporter (`ingest/dataset_exporter.py`)
 
-- Export par **épisode** (durée configurable, ex: 10 min) ou par **seed** de scénario
-- Format : **Parquet** (recommandé pour ML) ou CSV
-- Partitionnement : `data/raw/episode={N}/machine={id}/`
-- Métadonnées : seed, scénario, timestamps, version du schéma
+- Format : **Parquet** (recommandé pour ML), fallback CSV si pyarrow absent
+- Partitionnement : `data/raw/episode={N}/machine={id}/part-0.parquet`
+- Les résumés cluster vont dans `machine=_cluster/`
+- Métadonnées par épisode : `data/raw/episode={N}/metadata.json`
 
-### 3.4 Backend de stockage
+**Contenu de `metadata.json` :**
+```json
+{
+  "episode_id": "001",
+  "scenario": "stress",
+  "n_records": 54000,
+  "duration_s": 180.3,
+  "ts_start_real": "2026-06-09T01:00:00Z",
+  "ts_end_real": "2026-06-09T01:03:00Z",
+  "ts_sim_start": "2005-01-01T00:00:00Z",
+  "ts_sim_end": "2005-01-01T03:00:00Z",
+  "sim_duration_s": 10800,
+  "machines": {
+    "srv-master-01": {"role": "master", "t_shutdown_c": 90.0, "t_restart_c": 55.0, "fan_max_rpm": 5000, "fan_count": 2},
+    "srv-worker-01": {"role": "worker", "t_shutdown_c": 88.0, "t_restart_c": 50.0, "fan_max_rpm": 5000, "fan_count": 2}
+  },
+  "cluster_id": "cluster_alpha"
+}
+```
 
-**Option A — TimescaleDB** (si profil `storage` de jumeaux-chauds actif) :
-- Table hypertable : `telemetry(timestamp, cluster_id, machine_id, ...)`
-- Rétention : 7 jours en ligne
-- Agrégations continues : moyennes 1min, 5min
+### 3.4 Scripts de collecte
 
-**Option B — Parquet** (mode standalone) :
-- Fichiers partitionnés par date et machine
-- Indexé par timestamp pour les requêtes fenêtrées
+**`ingest_mqtt_simulations.bat`** : collecte automatisée multi-scénarios
+- Passe la simulation à x60 (`PUT /simulation/speed`)
+- Pour chaque scénario : change le scénario, vérifie/corrige l'état (running/paused/stopped), stabilise 5s, lance le subscriber 180s
+- Scénarios couverts : `basic`, `busy_weeks`, `heatwave`, `nominal`, `stress`, `trace_replay`
+- Épisodes produits : `001` à `006`
+
+**`ingest_gen_features.bat`** : feature engineering en batch
+```bash
+ingest_gen_features.bat          # tous les épisodes
+ingest_gen_features.bat 003      # épisode spécifique
+```
 
 ---
 
@@ -129,44 +172,61 @@ Version 1.0 — Juin 2026
 
 ### 4.1 Features temporelles (`features/temporal.py`)
 
-Toutes les features sont calculées sur une fenêtre glissante.
-
 | Feature | Calcul | Fenêtre |
 |---------|--------|---------|
 | `temp_delta_5s` | `temp(t) - temp(t-5s)` | 5s |
 | `temp_delta_15s` | `temp(t) - temp(t-15s)` | 15s |
 | `temp_delta_30s` | `temp(t) - temp(t-30s)` | 30s |
-| `temp_rolling_mean_30s` | Moyenne temp sur 30s | 30s |
-| `temp_rolling_mean_60s` | Moyenne temp sur 60s | 60s |
+| `temp_rolling_mean_30s` | Moyenne glissante température | 30s |
+| `temp_rolling_mean_60s` | Moyenne glissante température | 60s |
+| `temp_rolling_std_30s` | Écart-type glissant température | 30s |
 | `margin_to_shutdown` | `t_shutdown - temperature_c` | instant |
 | `margin_pct` | `margin_to_shutdown / t_shutdown * 100` | instant |
-| `load_rolling_mean_30s` | Moyenne charge sur 30s | 30s |
+| `margin_delta_30s` | Variation de la marge sur 30s | 30s |
+| `load_rolling_mean_30s` | Moyenne charge estimée | 30s |
+| `load_rolling_mean_60s` | Moyenne charge estimée | 60s |
 | `rpm_variance` | Variance des RPM des fans | instant |
 | `rpm_cv` | Coefficient de variation RPM | instant |
+| `rpm_delta_15s` | Variation RPM moyen sur 15s | 15s |
+| `rpm_rolling_mean_30s` | Moyenne RPM moyen | 30s |
+| `power_rolling_mean_30s` | Moyenne puissance totale | 30s |
+| `power_delta_30s` | Variation puissance sur 30s | 30s |
+| `sensor_max_delta_15s` | Variation temp max capteurs sur 15s | 15s |
+| `sensor_max_rolling_mean_30s` | Moyenne temp max capteurs | 30s |
 
 ### 4.2 Features contextuelles (`features/contextual.py`)
 
+Seuil zone chaude : `T > 0.80 × t_shutdown`
+
 | Feature | Description |
 |---------|-------------|
-| `time_in_hot_zone_s` | Durée cumulée depuis T > 80% seuil shutdown |
-| `time_in_degraded_s` | Durée depuis entrée en mode degraded |
+| `time_in_hot_zone_s` | Durée continue en zone chaude (reset si T redescend) |
+| `time_in_degraded_s` | Durée continue en mode degraded |
 | `nb_shutdowns_episode` | Nombre de shutdowns depuis début épisode |
 | `nb_degraded_episode` | Nombre de passages en degraded depuis début épisode |
-| `cycles_since_last_fault` | Ticks depuis dernière panne |
+| `ticks_since_last_shutdown` | Ticks depuis le dernier shutdown |
+| `ticks_since_last_fault` | Ticks depuis la dernière panne injectée |
 | `has_fan_fault` | Fan failure active (bool) |
 | `has_power_surge` | Power surge active (bool) |
+| `has_sensor_drift` | Sensor drift active (bool) |
 | `fan_mode_manual` | Au moins un fan en mode manual (bool) |
 | `rpm_changes_last_60s` | Nombre de changements de consigne ventilateur sur 60s |
+| `is_recovering` | Machine repassée à `on` après `degraded`/`off` récemment (bool) |
 
 ### 4.3 Features énergétiques (`features/energy.py`)
 
+Loi cubique (alignée sur `physics.py` de jumeaux-chauds) : `P_fan = P_nominal × (RPM/RPM_max)³ × fan_count`
+
 | Feature | Description |
 |---------|-------------|
-| `power_fans_w` | Puissance consommée par les fans (W) |
+| `power_fans_w` | Puissance consommée par les fans (W, loi cubique) |
 | `power_compute_w` | Puissance de calcul (W, hors fans) |
 | `fan_energy_ratio` | `power_fans / power_total` |
 | `pue_estimated` | PUE estimé (1 + fan_energy / compute_energy) |
 | `energy_per_temp_unit` | kWh / °C (efficacité du refroidissement) |
+| `energy_fans_kwh_cumulated` | Énergie fans cumulée depuis début épisode (kWh) |
+| `power_fans_rolling_mean_30s` | Moyenne puissance fans sur 30s |
+| `pue_rolling_mean_30s` | Moyenne PUE sur 30s |
 
 ### 4.4 Labeler (`features/labeler.py`)
 
@@ -182,8 +242,8 @@ Toutes les features sont calculées sur une fenêtre glissante.
 
 | Label | Définition |
 |-------|-----------|
-| `optimal_rpm` | Consigne RPM minimale permettant de maintenir T < `0.85 * t_shutdown` |
-| `action_class` | Index de l'action dans `{0, 1500, 2500, 3500, 4500}` RPM |
+| `time_to_failure_s` | Temps en secondes avant le prochain incident (`None` si aucun) |
+| `action_class` | Index dans `RPM_LEVELS = [0, 1500, 2500, 3500, 4500]` — oracle heuristique basé sur `temp_ratio × n_levels`, forcé au max si `status=degraded` |
 
 ---
 
@@ -353,24 +413,18 @@ Stockage : Parquet ou TimescaleDB selon configuration.
 ### 9.1 Variables d'environnement (`.env`)
 
 ```env
-# jumeaux-chauds connection
 MQTT_BROKER_HOST=localhost
 MQTT_BROKER_PORT=1883
+MQTT_TOPIC_ROOT=dt
+CLUSTER_ID=cluster_alpha
 API_BASE_URL=http://localhost:8000
-
-# Storage
-STORAGE_BACKEND=parquet  # ou timescaledb
+T_SHUTDOWN_DEFAULT_C=88.0
+STORAGE_BACKEND=parquet
 PARQUET_DATA_DIR=./data
-TIMESCALEDB_URL=postgresql://user:pass@localhost:5432/telemetry
-
-# Supervisor
 DECISION_INTERVAL_S=5
-PREDICTOR_MODEL=gradient_boosting  # ou logistic_regression, random_forest, threshold
-CONTROLLER_MODEL=score_controller  # ou supervised, pid, threshold, fixed
-RISK_THRESHOLD=0.6  # seuil d'alerte du prédicteur
-
-# Feature engineering
-T_SHUTDOWN_DEFAULT_C=95.0  # fallback si non disponible via API
+PREDICTOR_MODEL=gradient_boosting
+CONTROLLER_MODEL=score_controller
+RISK_THRESHOLD=0.6
 ROLLING_WINDOW_S=60
 ```
 
