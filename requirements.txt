@@ -2,7 +2,7 @@
 aiomqtt>=2.0          # subscriber MQTT async (même lib que jumeaux-chauds)
 paho-mqtt>=1.6        # dépendance de aiomqtt
 httpx>=0.27
-
+ 
 # Data processing
 pandas>=2.0
 numpy>=1.24

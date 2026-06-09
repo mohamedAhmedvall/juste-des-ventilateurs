@@ -103,9 +103,16 @@ class LogisticPredictor:
 
     def load(self, path: str) -> "LogisticPredictor":
         data = joblib.load(path)
-        self._pipeline = data["pipeline"]
-        self.threshold = data["threshold"]
-        self.C = data["C"]
+        if isinstance(data, dict):
+            pipeline_val = (data.get("pipeline") or data.get("model") or data.get("estimator")
+                            or next((v for v in data.values() if hasattr(v, "predict_proba")), None))
+            if pipeline_val is None:
+                raise KeyError(f"Aucun pipeline sklearn dans le joblib. Cles: {list(data.keys())}")
+            self._pipeline = pipeline_val
+            self.threshold = data.get("threshold", self.threshold)
+            self.C         = data.get("C", self.C)
+        else:
+            self._pipeline = data
         return self
 
     # ------------------------------------------------------------------

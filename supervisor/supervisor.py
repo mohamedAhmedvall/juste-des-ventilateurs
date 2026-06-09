@@ -169,12 +169,27 @@ class JumeauxClient:
 
 def load_predictor(model_name: str = "logistic", label: str = "failure_60s"):
     """Charge le prédicteur de pannes sauvegardé."""
+    import joblib as _joblib
     saved_path = ROOT / "models" / "failure_prediction" / "saved" / f"{model_name}_{label}.joblib"
     if not saved_path.exists():
         logger.warning(f"Prédicteur absent : {saved_path}. risk_score=0 partout.")
         return None
     from models.failure_prediction.logistic_regression import LogisticPredictor
-    predictor = LogisticPredictor().load(str(saved_path))
+    predictor = LogisticPredictor()
+    # Chargement defensif : compatibilite format dict ou pipeline direct
+    raw = _joblib.load(str(saved_path))
+    logger.info(f"  joblib type={type(raw).__name__}  keys={list(raw.keys()) if isinstance(raw, dict) else 'n/a'}")
+    if isinstance(raw, dict):
+        # Chercher le pipeline sous les cles connues (pipeline, model, estimator...)
+        pipeline_val = (raw.get("pipeline") or raw.get("model") or raw.get("estimator")
+                        or next((v for v in raw.values() if hasattr(v, "predict_proba")), None))
+        if pipeline_val is None:
+            raise KeyError(f"Aucun objet sklearn trouve dans le joblib. Cles: {list(raw.keys())}")
+        predictor._pipeline = pipeline_val
+        predictor.threshold = raw.get("threshold", predictor.threshold)
+        predictor.C         = raw.get("C", predictor.C)
+    else:
+        predictor._pipeline = raw
     logger.info(f"Prédicteur chargé : {saved_path.name}")
     return predictor
 

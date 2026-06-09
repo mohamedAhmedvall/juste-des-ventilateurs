@@ -94,7 +94,7 @@ Le mode ML (logistic + supervised + override RPM_HIGH quand risk≥0.60) apporte
 - **Détection d'incidents** : 7981/7986 (99.9%) vs 0% pour les autres modes
 - **Lead time** : 120s médian — les alarmes arrivent en moyenne 2 minutes avant l'incident
 - **Réaction danger** : 100% des ticks dangereux reçoivent un RPM ≥ 3500
-- **Coût** : RPM moyen de 2681 vs 984 (natif) — surcoût énergétique compensé par la prévention des shutdowns
+- **Consigne** : RPM moyen de 2681 vs 984 (natif). La puissance réelle suit une loi cubique (P ∝ RPM³) — le surcoût en puissance fans est donc bien supérieur au ratio des RPM, mais reste marginal face au coût d'un shutdown (arrêt production + redémarrage)
 
 ### Test de robustesse par scénario
 
