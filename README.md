@@ -175,17 +175,17 @@ python -m features.pipeline \
   --config data/raw/episode=001/metadata.json
 ```
 
-### Entraîner les modèles
+### Entraîner et évaluer les modèles de prédiction de pannes
 
 ```bash
-# Feature engineering (déjà fait ci-dessus)
-python -m features.pipeline --input data/raw/episode=001 --output data/processed/episode=001
+# Entraînement + évaluation comparative (tous les modèles, label failure_60s)
+train_models.bat
 
-# Entraîner le modèle prédictif
-python -m models.failure_prediction.train --model gradient_boosting --data data/processed/
+# Label spécifique
+train_models.bat failure_30s
 
-# Entraîner le contrôleur
-python -m models.fan_control.train --model score_controller --data data/processed/
+# Analyse exploratoire rapide (volumes de split, labels, corrélations)
+python ingest_quick_EDA.py --processed-only
 ```
 
 ### Lancer le superviseur

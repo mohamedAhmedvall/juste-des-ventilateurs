@@ -255,47 +255,79 @@ Tous les modèles implémentent l'interface suivante :
 
 ```python
 class FailurePredictor:
-    def fit(self, X_train, y_train) -> None: ...
-    def predict(self, X: pd.DataFrame) -> np.ndarray: ...  # labels binaires
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray: ...  # probabilités
+    def fit(self, X_train, y_train, X_val=None, y_val=None) -> None: ...
+    def predict(self, X: pd.DataFrame) -> np.ndarray: ...       # labels binaires
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray: ... # shape (n, 2), colonne 1 = P(failure)
     def save(self, path: str) -> None: ...
-    def load(self, path: str) -> None: ...
+    def load(self, path: str) -> "FailurePredictor": ...
 ```
 
-### 5.2 Modèles implémentés
+### 5.2 Splitter temporel (`splitter.py`)
+
+Stratégie **Option A — fenêtre temporelle (70/15/15) par épisode** :
+
+```
+Pour chaque épisode (trié chronologiquement) :
+  train ← 70% initial
+  val   ← 15% médian
+  test  ← 15% final
+
+X_train_global = concat(train_ep001, ..., train_ep006)
+X_val_global   = concat(val_ep001,   ..., val_ep006)
+X_test_global  = concat(test_ep001,  ..., test_ep006)
+```
+
+Garanties : pas de leakage temporel, chaque scénario représenté dans les 3 splits.
+
+```python
+splitter = TemporalSplitter(processed_dir="data/processed")
+X_train, X_val, X_test, y_train, y_val, y_test = splitter.split(label_col="failure_60s")
+# → train=212 864  val=45 611  test=45 621  features=47
+```
+
+Colonnes exclues des features : timestamps, IDs, labels, colonnes 100% NaN (`machines_total`, `machines_on`).
+
+### 5.3 Modèles implémentés
 
 **Baseline heuristique (`baseline_threshold.py`) :**
-- Paramètres : `T_warn` (°C), `N_seconds` (durée en zone chaude)
-- Règle : `risk = 1 if (temperature_c > T_warn AND time_in_hot_zone_s > N_seconds)`
-- Optimisation : grid search sur `T_warn ∈ [60, 85]` et `N ∈ [5, 60]`
+- Règle : `failure = 1 si temperature_c > T_warn ET time_in_hot_zone_s > N`
+- Grid search sur `T_warn ∈ [60, 85]°C` et `N ∈ [0, 30]s`
+- Score continu : `0.7 × (T/T_warn) + 0.3 × (hot/N)`
 
 **Régression Logistique (`logistic_regression.py`) :**
-- Features : toutes (normalisées)
-- Régularisation : L2, `C` optimisé par cross-validation
-- Calibration Platt pour les probabilités
-
-**Random Forest (`random_forest.py`) :**
-- `n_estimators = 200`, `max_depth ∈ [5, 20]`, `class_weight = balanced`
-- Feature importance extraite et loggée
+- `StandardScaler` + `CalibratedClassifierCV` (calibration Platt, cv=3)
+- `C` sélectionné par validation sur `[0.001, 0.01, 0.1, 1, 10, 100]`
 - Seuil de décision optimisé sur Recall ≥ 0.85
 
+**Random Forest (`random_forest.py`) :**
+- `class_weight="balanced"`, `random_state=42`
+- Grid search : `n_estimators ∈ [100, 200]`, `max_depth ∈ [10, 15, 20]`
+- Feature importance extraite et loggée, seuil optimisé
+
 **Gradient Boosting (`gradient_boosting.py`) :**
-- XGBoost ou LightGBM
-- Early stopping sur jeu de validation
-- Tuning : `learning_rate`, `max_depth`, `n_estimators`, `subsample`
+- Backend automatique : XGBoost → LightGBM → sklearn GBM
+- Early stopping sur val (`n_rounds=30`), `scale_pos_weight` automatique
+- Paramètres par défaut : `lr=0.05`, `max_depth=6`, `subsample=0.8`
 
-### 5.3 Protocole d'évaluation
-
-**Splits :**
-- Train : épisodes 1..N-2
-- Validation : épisode N-1
-- Test : épisode N (jamais vu pendant l'entraînement)
-- Multi-seed : répétition sur 5 seeds différents pour robustesse
+### 5.4 Protocole d'évaluation (`evaluation/failure_prediction_eval.py`)
 
 **Métriques :**
 - Precision, Recall, F1, PR-AUC, ROC-AUC
-- **Temps moyen d'anticipation (lead time)** : moyenne de `t_incident - t_first_alert`
-- Taux de faux négatifs sur cas critiques (shutdown thermique)
+- **Lead time moyen** : `mean(t_incident - t_première_alerte)` sur fenêtre 120s
+- Taux de faux négatifs sur shutdowns thermiques
+
+**Cibles :**
+- Recall ≥ 0.85 sur cas dangereux
+- Lead time moyen ≥ 30s
+- F1 > baseline heuristique
+
+**Lancement :**
+```bash
+python -m evaluation.failure_prediction_eval --label failure_60s
+python -m evaluation.failure_prediction_eval --models gradient_boosting --label failure_30s
+```
+
+Résultats exportés dans `evaluation/results/failure_prediction_results.json`.
 
 ---
 

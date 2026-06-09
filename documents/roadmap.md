@@ -121,29 +121,47 @@ pytest tests/test_features.py -v
 
 ---
 
-## Phase 4 — Modèle d'anticipation de pannes
+## Phase 4 — Modèle d'anticipation de pannes ✅
 
 **Objectif :** Prédire avec suffisamment d'avance les incidents thermiques.
 
 ### Module : `models/failure_prediction/`
 
+### Stratégie de split : Option A — fenêtre temporelle (70/15/15)
+
+Chaque épisode est coupé chronologiquement en train/val/test, puis les morceaux sont concaténés. Aucun leakage temporel, chaque scénario est représenté dans les 3 splits.
+
+```
+Split sur 6 épisodes (304k lignes, 47 features) :
+  train : 212 864 lignes  (pos failure_60s = 22.0%)
+  val   :  45 611 lignes
+  test  :  45 621 lignes  (pos failure_60s = 18.8%)
+```
+
 ### Tâches
 
-- [ ] **Baseline heuristique** (`models/failure_prediction/baseline_threshold.py`)
-  - Règle : si `temperature_c > T_warn` depuis N secondes → panne probable
-  - Paramètres : `T_warn` et `N` optimisés sur les données d'entraînement
-- [ ] **Modèle 1 : Régression Logistique** (`models/failure_prediction/logistic_regression.py`)
-  - Entraînement, calibration, seuil optimal
-- [ ] **Modèle 2 : Random Forest** (`models/failure_prediction/random_forest.py`)
-  - Importance des features, profondeur optimale
-- [ ] **Modèle 3 : Gradient Boosting** (`models/failure_prediction/gradient_boosting.py`)
-  - XGBoost ou LightGBM, early stopping, tuning
-- [ ] **Évaluation comparative** (`evaluation/failure_prediction_eval.py`)
+- [x] **Splitter temporel** (`models/failure_prediction/splitter.py`)
+  - `TemporalSplitter` : split 70/15/15 par épisode, concaténation globale
+  - `split()` retourne X_train/val/test, y_train/val/test + feature_cols
+  - `split_with_meta()` retourne les DataFrames complets pour le calcul du lead time
+- [x] **Baseline heuristique** (`models/failure_prediction/baseline_threshold.py`)
+  - Règle : `T > T_warn ET time_in_hot_zone_s > N`
+  - Grid search sur T_warn ∈ [60, 85]°C et N ∈ [0, 30]s
+- [x] **Modèle 1 : Régression Logistique** (`models/failure_prediction/logistic_regression.py`)
+  - StandardScaler + CalibratedClassifierCV (Platt)
+  - C optimisé par validation, seuil optimisé sur Recall ≥ 0.85
+- [x] **Modèle 2 : Random Forest** (`models/failure_prediction/random_forest.py`)
+  - class_weight="balanced", grid search profondeur/n_estimators
+  - Feature importance loggée, seuil optimisé
+- [x] **Gradient Boosting** (`models/failure_prediction/gradient_boosting.py`)
+  - XGBoost (fallback LightGBM, puis sklearn)
+  - Early stopping sur val, scale_pos_weight automatique
+- [x] **Évaluation comparative** (`evaluation/failure_prediction_eval.py`)
   - Métriques : Precision, Recall, F1, PR-AUC, ROC-AUC
-  - **Métrique clé : temps moyen d'anticipation avant incident** (en secondes)
-  - Analyse des faux négatifs (incidents non détectés)
-  - Validation : séparation train/test par épisodes, test sur plusieurs seeds
-- [ ] Sauvegarde des modèles : `models/failure_prediction/saved/` (joblib ou ONNX)
+  - **Lead time** : temps moyen entre première alerte et incident (fenêtre 120s)
+  - Taux de faux négatifs sur shutdowns
+  - Tableau comparatif + export JSON
+- [ ] Sauvegarde et chargement des modèles : `models/failure_prediction/saved/`
 - [ ] Notebook : `notebooks/03_failure_prediction.ipynb`
 
 ### Métriques cibles
@@ -151,10 +169,29 @@ pytest tests/test_features.py -v
 - Temps moyen d'anticipation ≥ 30s avant incident
 - F1-score > baseline heuristique
 
-### Livrables
-- `models/failure_prediction/` : code + modèles sauvegardés
-- `evaluation/results/failure_prediction_results.json`
-- `notebooks/03_failure_prediction.ipynb`
+### Livrables ✅
+- `models/failure_prediction/splitter.py`
+- `models/failure_prediction/baseline_threshold.py`
+- `models/failure_prediction/logistic_regression.py`
+- `models/failure_prediction/random_forest.py`
+- `models/failure_prediction/gradient_boosting.py`
+- `evaluation/failure_prediction_eval.py`
+- `train_models.bat`
+
+### Commandes
+```bash
+# Entrainement + evaluation comparative (tous les modeles)
+train_models.bat
+
+# Label specifique
+train_models.bat failure_30s
+
+# EDA rapide pour verifier les splits avant entrainement
+python ingest_quick_EDA.py --processed-only
+
+# Evaluation seule (sans re-entrainement)
+python -m evaluation.failure_prediction_eval --label failure_60s --models baseline logistic random_forest gradient_boosting
+```
 
 ---
 

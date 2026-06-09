@@ -322,35 +322,59 @@ def global_summary(episodes: list[tuple[str, dict, pd.DataFrame | None]]):
 
     summary_df = pd.DataFrame(rows).set_index("Episode")
     print(summary_df.to_string())
-    print()
 
-    # Recommandations de split
+    # Split Option A — fenêtre temporelle par épisode
+    TRAIN_RATIO = 0.70
+    VAL_RATIO   = 0.15
+    # TEST_RATIO  = 0.15 (implicite)
+
     print()
     sep()
-    print("  Recommandations pour le split train/eval/test")
+    print("  Split Option A — fenêtre temporelle (70 / 15 / 15) par épisode")
     sep()
-    total = sum(r["Lignes"] for r in rows)
-    print(f"  Total lignes disponibles : {total:,}")
-    print()
-    print("  Option A — Fenêtre temporelle par épisode (recommandée) :")
-    print("    Train   : 70% initial de chaque épisode")
-    print("    Val     : 15% médian de chaque épisode")
-    print("    Test    : 15% final de chaque épisode")
-    print("    → Chaque scénario représenté dans les 3 splits")
-    print("    → Évite le leakage temporel (passé → futur dans chaque épisode)")
-    print()
-    print("  Option B — Leave-one-scenario-out :")
-    print("    Train   : tous les épisodes sauf un")
-    print("    Test    : l'épisode laissé de côté (rotation)")
-    print("    → Teste la généralisation inter-scénarios")
-    print("    → Utile si les scénarios sont très différents")
-    print()
+    print(f"  {'Episode':<10} {'Scenario':<14} {'Total':>8}  "
+          f"{'Train (70%)':>12}  {'Val (15%)':>10}  {'Test (15%)':>10}  "
+          f"{'f60 train%':>10}  {'f60 test%':>10}")
+    sep("─")
+
+    train_total = val_total = test_total = 0
     for ep_id, meta, df_proc in episodes:
         if df_proc is None or df_proc.empty:
             continue
-        n = len(df_proc)
-        print(f"    Episode {ep_id} ({meta.get('scenario','?'):<12}) : "
-              f"train={int(n*0.7):,}  val={int(n*0.15):,}  test={int(n*0.15):,}")
+        # Tri chronologique par machine puis global
+        df_s = df_proc.sort_values("timestamp") if "timestamp" in df_proc.columns else df_proc
+        n = len(df_s)
+        n_train = int(n * TRAIN_RATIO)
+        n_val   = int(n * VAL_RATIO)
+        n_test  = n - n_train - n_val
+
+        train_total += n_train
+        val_total   += n_val
+        test_total  += n_test
+
+        # Taux de positifs failure_60s dans train vs test
+        f60_train = f60_test = "N/A"
+        if "failure_60s" in df_s.columns:
+            s_train = df_s.iloc[:n_train]["failure_60s"]
+            s_test  = df_s.iloc[n_train + n_val:]["failure_60s"]
+            pos_tr  = (s_train == 1).sum()
+            pos_te  = (s_test  == 1).sum()
+            f60_train = f"{100*pos_tr/max(len(s_train),1):.1f}%"
+            f60_test  = f"{100*pos_te/max(len(s_test), 1):.1f}%"
+
+        print(f"  {ep_id:<10} {meta.get('scenario','?'):<14} {n:>8,}  "
+              f"{n_train:>12,}  {n_val:>10,}  {n_test:>10,}  "
+              f"{f60_train:>10}  {f60_test:>10}")
+
+    sep("─")
+    grand_total = train_total + val_total + test_total
+    print(f"  {'TOTAL':<10} {'':<14} {grand_total:>8,}  "
+          f"{train_total:>12,}  {val_total:>10,}  {test_total:>10,}")
+    print()
+    print("  Stratégie : couper chaque épisode chronologiquement,")
+    print("  puis concaténer : train_ep001..006 → X_train global,")
+    print("                    val_ep001..006   → X_val global,")
+    print("                    test_ep001..006  → X_test global.")
 
 
 # ---------------------------------------------------------------------------
