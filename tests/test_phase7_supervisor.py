@@ -24,10 +24,19 @@ def _make_stub(name: str):
     sys.modules[name] = mod
     return mod
 
-for _m in ["aiomqtt", "joblib", "sklearn", "sklearn.linear_model",
-           "sklearn.ensemble", "sklearn.preprocessing", "xgboost"]:
+# Ne stubber que les modules reellement absents du systeme de test.
+# IMPORTANT : ne pas stubber xgboost si le vrai package est disponible,
+# car cela casserait test_phase4_models qui charge des modeles .joblib xgboost.
+_STUB_ONLY_IF_MISSING = ["aiomqtt"]
+for _m in _STUB_ONLY_IF_MISSING:
     if _m not in sys.modules:
         _make_stub(_m)
+
+# xgboost : stubber uniquement si vraiment absent (evite de polluer test_phase4)
+try:
+    import xgboost  # noqa: F401
+except ImportError:
+    _make_stub("xgboost")
 
 
 # ---------------------------------------------------------------------------

@@ -21,11 +21,11 @@ from supervisor.decision_logger import DecisionLogger
 from supervisor.supervisor import (
     Supervisor,
     JumeauxClient,
-    snapshot_to_series,
     RISK_THRESHOLD,
     RPM_HIGH,
     RPM_DEFAULT,
 )
+from supervisor.online_features import OnlineFeatureBuffer
 
 
 # ---------------------------------------------------------------------------
@@ -73,43 +73,57 @@ class TestDecisionLogger:
 
 
 # ---------------------------------------------------------------------------
-# snapshot_to_series
+# OnlineFeatureBuffer (remplacement de snapshot_to_series — Phase 7)
 # ---------------------------------------------------------------------------
 
-class TestSnapshotToSeries:
+class TestOnlineFeatureBridge:
+    """Tests de compatibilite OnlineFeatureBuffer avec les attentes Phase 6."""
 
-    def _make_snap(self, temp=65.0, t_shutdown=88.0, n_fans=2, rpm=2500):
+    def _make_snap(self, temp=65.0, n_fans=2, rpm=2500, status="on"):
         return {
-            "temperature_c":  temp,
-            "power_w":        100.0,
-            "energy_kwh":     0.3,
-            "load_estimated": 0.5,
-            "t_shutdown_c":   t_shutdown,
-            "fans":           {f"fan_{i}": {"rpm": rpm} for i in range(n_fans)},
-            "sensors":        {"temp_max": temp + 2, "temp_mean": temp},
+            "machine_id":       "m0",
+            "role":             "worker",
+            "status":           status,
+            "temperature_c":    temp,
+            "sensor_temp_max":  temp + 2.0,
+            "sensor_temp_mean": temp,
+            "power_w":          100.0,
+            "energy_kwh":       0.3,
+            "load_estimated":   0.5,
+            "fans":             [{"idx": i, "rpm": rpm} for i in range(n_fans)],
+            "faults":           [],
         }
 
+    def _filled_buffer(self, temp=65.0, n=10, **kw):
+        buf = OnlineFeatureBuffer()
+        for _ in range(n):
+            buf.update("m0", self._make_snap(temp=temp, **kw))
+        return buf
+
     def test_returns_series(self):
-        s = snapshot_to_series(self._make_snap())
+        buf = self._filled_buffer()
+        s = buf.get_features("m0")
         assert isinstance(s, pd.Series)
 
     def test_temperature_correct(self):
-        s = snapshot_to_series(self._make_snap(temp=72.0))
+        buf = self._filled_buffer(temp=72.0)
+        s = buf.get_features("m0")
         assert s["temperature_c"] == pytest.approx(72.0)
 
     def test_margin_to_shutdown(self):
-        s = snapshot_to_series(self._make_snap(temp=65.0, t_shutdown=88.0))
-        assert s["margin_to_shutdown"] == pytest.approx(23.0)
+        buf = self._filled_buffer(temp=65.0)
+        s = buf.get_features("m0")
+        assert s["margin_to_shutdown"] == pytest.approx(88.0 - 65.0)
 
-    def test_fan_rpm_mean(self):
-        s = snapshot_to_series(self._make_snap(rpm=3500, n_fans=3))
-        assert s["fan_rpm_mean"] == pytest.approx(3500.0)
+    def test_rpm_rolling_mean(self):
+        buf = self._filled_buffer(rpm=3500, n_fans=3)
+        s = buf.get_features("m0")
+        assert s["rpm_rolling_mean_30s"] == pytest.approx(3500.0, rel=0.01)
 
     def test_empty_fans(self):
-        snap = self._make_snap()
-        snap["fans"] = {}
-        s = snapshot_to_series(snap)
-        assert s["fan_rpm_mean"] == 0.0
+        buf = self._filled_buffer(n_fans=0)
+        s = buf.get_features("m0")
+        assert s["rpm_rolling_mean_30s"] == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -161,46 +175,50 @@ class TestSupervisor:
         assert sup.controller is None
         sup.dec_logger.close()
 
+    def _make_state(self, temp=65.0):
+        """Cree un pd.Series minimal compatible avec _predict_risk / _decide_rpm."""
+        buf = OnlineFeatureBuffer()
+        snap = {
+            "machine_id": "m0", "role": "worker", "status": "on",
+            "temperature_c": temp, "sensor_temp_max": temp + 2,
+            "sensor_temp_mean": temp, "power_w": 100.0, "energy_kwh": 0.3,
+            "load_estimated": 0.5, "fans": [], "faults": [],
+        }
+        for _ in range(10):
+            buf.update("m0", snap)
+        return buf.get_features("m0")
+
     def test_predict_risk_no_predictor(self, tmp_path):
         sup = self._make_supervisor(tmp_path, mode="native")
-        state = snapshot_to_series({
-            "temperature_c": 65.0, "power_w": 100.0, "energy_kwh": 0.3,
-            "load_estimated": 0.5, "t_shutdown_c": 88.0,
-            "fans": {}, "sensors": {},
-        })
+        state = self._make_state()
         risk = sup._predict_risk(state)
         assert risk == 0.0
         sup.dec_logger.close()
 
     def test_risk_override(self, tmp_path):
-        """Quand risk_score >= threshold, le RPM doit être RPM_HIGH."""
+        """Quand risk_score >= threshold, le RPM doit etre RPM_HIGH."""
         sup = self._make_supervisor(tmp_path, mode="ml")
-        state = snapshot_to_series({
-            "temperature_c": 65.0, "power_w": 100.0, "energy_kwh": 0.3,
-            "load_estimated": 0.5, "t_shutdown_c": 88.0,
-            "fans": {}, "sensors": {},
-        })
+        state = self._make_state()
         rpm = sup._decide_rpm(state, risk_score=RISK_THRESHOLD + 0.01)
         assert rpm == RPM_HIGH
         sup.dec_logger.close()
 
     def test_native_mode_returns_minus_one(self, tmp_path):
-        """Mode native → décision = -1 (pas d'intervention)."""
+        """Mode native -> decision = -1 (pas d'intervention)."""
         sup = self._make_supervisor(tmp_path, mode="native")
-        state = snapshot_to_series({
-            "temperature_c": 65.0, "power_w": 100.0, "energy_kwh": 0.3,
-            "load_estimated": 0.5, "t_shutdown_c": 88.0,
-            "fans": {}, "sensors": {},
-        })
+        state = self._make_state()
         rpm = sup._decide_rpm(state, risk_score=0.0)
         assert rpm == -1
         sup.dec_logger.close()
 
-    def test_step_empty_cluster(self, tmp_path):
-        """Un step sur un cluster vide retourne une liste vide."""
+    def test_decision_cycle_rest_empty_cluster(self, tmp_path):
+        """_decision_cycle_rest sur un cluster vide ne leve pas d'exception."""
         sup = self._make_supervisor(tmp_path, mode="ml")
-        results = sup.step()  # API inexistante → cluster vide
-        assert results == []
+        # API inexistante -> cluster vide, aucun plantage attendu
+        try:
+            sup._decision_cycle_rest()
+        except Exception as e:
+            assert False, f"_decision_cycle_rest a leve une exception inattendue : {e}"
         sup.dec_logger.close()
 
     def test_decision_logged_after_process(self, tmp_path):
