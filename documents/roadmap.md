@@ -1,7 +1,7 @@
 # Roadmap — Juste des Ventilateurs
 
 Projet M2 Data/IA — LaPlateforme_  
-Version 1.5 — Juin 2026
+Version 1.6 — Juin 2026
 
 ---
 
@@ -257,6 +257,18 @@ Actions discrétisées : `RPM ∈ {800, 1500, 2500, 3500, 4500}` par ventilateur
   - risk_scores fournis par le prédicteur logistic (Phase 4)
 - [x] Notebook : `notebooks/04_fan_control.ipynb`
 
+### Résultats obtenus (failure_60s, après ré-entraînement oracle RPM_MIN=800)
+
+| Contrôleur | mean_rpm | action_accuracy | high_rpm_when_dangerous | nb_shutdowns |
+|------------|----------|-----------------|------------------------|-------------|
+| **supervised** | 1948 | 0.735 | 0.646 | 10 |
+| baseline_pid | 1082 | 0.460 | 0.528 | 10 |
+| baseline_threshold | 1815 | 0.417 | 0.468 | 10 |
+| score_controller | **1331** | 0.096 | N/A | 10 |
+| baseline_fixed_4500 | 4500 | 0.096 | 1.000 | 10 |
+
+Note : action_accuracy supervisé 0.9998 → 0.735 après correction oracle (classe 0 = 800 RPM au lieu de 0). La métrique de sécurité `high_rpm_when_dangerous=0.646` est inchangée.
+
 ### Métriques cibles
 - Réduction du nombre de shutdowns vs baseline auto native ≥ 50%
 - Consommation énergétique des fans ≤ baseline "full speed" (économie ≥ 20%)
@@ -510,7 +522,7 @@ supervisor/supervisor.py
 
 - [x] `features/labeler.py` : `RPM_LEVELS = [800, 1500, 2500, 3500, 4500]`
 - [x] `models/fan_control/supervised_controller.py` : `ACTION_TO_RPM = {0: 800, ...}`, `RPM_LEVELS = [800, ...]`
-- [ ] Relancer `04_train_fan_controllers.bat` pour régénérer `supervised.joblib` avec le nouvel oracle
+- [x] Relancer `04_train_fan_controllers.bat` pour régénérer `supervised.joblib` avec le nouvel oracle
 
 **Note :** Les fichiers `data/processed/` existants contiennent encore l'ancien `action_class` (classe 0 = RPM 0). Il faut relancer `ingest_gen_features.bat` puis `04_train_fan_controllers.bat` pour régénérer l'oracle corrigé.
 

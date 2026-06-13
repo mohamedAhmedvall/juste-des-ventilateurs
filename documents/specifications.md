@@ -436,7 +436,8 @@ supervisor/supervisor.py  ← Supervisor._decision_loop()
   - predictor.predict_proba(X) → risk_score
   - controller.decide_batch(X) → rpm
   - max(rpm, RPM_MIN=800)  ← plancher ventilation
-  - si risk >= RISK_THRESHOLD → override RPM_HIGH=4500
+  - si risk >= RISK_THRESHOLD (0.60) → override RPM_HIGH=4500  [risk_override]
+  - si hot30s_score >= HOT30S_THRESHOLD (0.50) → override RPM_HIGH=4500  [hot30s_override]
   - PUT /machines/{id}/fan_speed (si rpm != prev_rpm)
   - decision_logger.log(entry)
   - fallback REST GET /cluster/status si MQTT indisponible
@@ -471,6 +472,14 @@ L'Option E (MQTT) résout l'alimentation du buffer à la bonne cadence simulée.
 --dry-run                    Simuler sans envoyer de commandes REST
 ```
 
+**Variables d'environnement (`.env`) :**
+```
+RISK_THRESHOLD=0.60         Seuil failure_60s → RPM_HIGH
+HOT30S_THRESHOLD=0.50       Seuil hot_30s → RPM_HIGH (override surchauffe)
+RISK_LOG_THRESHOLD=0.05     Seuil log INFO par machine
+RPM_MIN=800                 Plancher ventilation minimale
+```
+
 ### 7.3 Buffer de features en ligne (`supervisor/online_features.py`) ✅
 
 `OnlineFeatureBuffer` maintient un historique de 70 ticks par machine (fenêtre max = 60s simulées + marge). À chaque tick MQTT reçu, il recalcule :
@@ -490,23 +499,31 @@ L'Option E (MQTT) résout l'alimentation du buffer à la bonne cadence simulée.
 
 Ces features sont strictement alignées sur `features/temporal.py`, `features/energy.py` et `features/contextual.py` utilisés à l'entraînement.
 
-### 7.4 Consumer MQTT télémétrie (`supervisor/mqtt_telemetry.py`) 🔲
+### 7.4 Consumer MQTT télémétrie (`supervisor/mqtt_telemetry.py`) ✅
 
-*(Phase 7 — à développer)*
+`MqttTelemetryConsumer` s'abonne à `dt/{cluster}/+/telemetry` via `aiomqtt` et alimente le buffer à chaque message reçu. Tourne en coroutine asyncio dans le même process que le superviseur. Fallback silencieux si MQTT indisponible.
 
-`MqttTelemetryConsumer` s'abonne à `dt/{cluster}/+/telemetry` via `aiomqtt` et alimente le buffer à chaque message reçu. Tourne en coroutine asyncio dans le même process que le superviseur.
+### 7.5 Override hot_30s — surchauffe imminente (`supervisor/supervisor.py`) ✅
 
-### 7.5 Logger de décisions (`supervisor/decision_logger.py`)
+Second prédicteur `logistic_hot_30s` chargé en parallèle du prédicteur principal `failure_60s`.
+
+**Logique de décision (ordre de priorité) :**
+1. `risk_score >= RISK_THRESHOLD (0.60)` → RPM_HIGH, `risk_override=True`
+2. `hot30s_score >= HOT30S_THRESHOLD (0.50)` → RPM_HIGH, `hot30s_override=True`
+3. Sinon → décision normale du contrôleur (RPM_MIN=800 garanti)
+
+**Champs JSONL ajoutés :** `hot30s_score` (float), `hot30s_override` (bool)
+
+### 7.6 Logger de décisions (`supervisor/decision_logger.py`)
 
 Chaque décision est loggée en JSONL avec :
-- `ts`, `machine_id`, `temperature_c`, `status`
-- `risk_score`, `risk_override` (bool)
+- `ts`, `machine_id`, `temperature_c`, `status`, `fan_rpm_mean`
+- `risk_score`, `hot30s_score`
+- `risk_override` (bool), `hot30s_override` (bool)
 - `rpm_previous`, `rpm_decided`, `command_sent` (bool)
 - `mode`
 
-### 7.6 Logs superviseur — niveaux et format 🔲
-
-*(Phase 7 — à développer)*
+### 7.7 Logs superviseur — niveaux et format ✅
 
 | Niveau | Contenu |
 |--------|---------|
