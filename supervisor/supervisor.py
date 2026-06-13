@@ -197,7 +197,17 @@ def load_predictor(model_name: str = "logistic", label: str = "failure_60s"):
         predictor.threshold = raw.get("threshold", predictor.threshold)
         predictor.C         = raw.get("C", predictor.C)
     else:
-        predictor._pipeline = raw
+        # Objet direct : sklearn pipeline/estimator ou XGBClassifier wrapper
+        if hasattr(raw, "predict_proba"):
+            predictor._pipeline = raw
+        else:
+            # Booster XGBoost natif ou autre objet sans predict_proba
+            logger.warning(
+                "Prédicteur '%s' : objet de type %s sans predict_proba. "
+                "Utilisez le modèle 'logistic' pour le superviseur temps-réel.",
+                model_name, type(raw).__name__,
+            )
+            return None
     logger.info("Prédicteur chargé : %s", saved_path.name)
     return predictor
 
@@ -753,10 +763,9 @@ def main() -> None:
         predictor_name          = args.predictor,
         controller_name         = args.controller,
         label                   = args.label,
-        decision_interval_ticks = args.decision_interval_ticks,
-        decision_interval_s     = args.decision_interval_s,
+        decision_interval_ticks = args.interval_ticks,
+        decision_interval_s     = args.interval,
         risk_threshold          = float(os.getenv("RISK_THRESHOLD", "0.6")),
-        risk_log_threshold      = float(os.getenv("RISK_LOG_THRESHOLD", "0.05")),
         dry_run                 = args.dry_run,
     )
     sup.run(duration_s=args.duration)
