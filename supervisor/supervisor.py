@@ -398,7 +398,8 @@ class Supervisor:
             return 0.0
 
     def _decide_rpm(self, state_series: "pd.Series", risk_score: float,
-                    hot30s_score: float = 0.0) -> tuple[int, bool, bool]:
+                    hot30s_score: float = 0.0,
+                    prev_rpm: int = RPM_DEFAULT) -> tuple[int, bool, bool]:
         """Retourne (rpm, risk_override, hot30s_override)."""
         if risk_score >= self.risk_threshold:
             return RPM_HIGH, True, False
@@ -412,6 +413,9 @@ class Supervisor:
         import pandas as pd
         X = pd.DataFrame([state_series])
         risk_arr = np.array([risk_score])
+        # Synchroniser _prev_rpm du contrôleur avec la commande réelle précédente
+        if hasattr(self.controller, "_prev_rpm"):
+            self.controller._prev_rpm = prev_rpm
         try:
             rpms = self.controller.decide_batch(X, risk_scores=risk_arr)
             return max(int(rpms[0]), RPM_MIN), False, False
@@ -439,8 +443,8 @@ class Supervisor:
         state      = self._feat_buffer.get_features(machine_id)
         risk       = self._predict_risk(state)
         hot30s     = self._predict_hot30s(state)
-        rpm, risk_ov, hot30s_ov = self._decide_rpm(state, risk, hot30s)
         prev_rpm   = self._prev_rpm.get(machine_id, RPM_DEFAULT)
+        rpm, risk_ov, hot30s_ov = self._decide_rpm(state, risk, hot30s, prev_rpm=prev_rpm)
 
         temp_c = float(state.get("temperature_c", 0.0))
 

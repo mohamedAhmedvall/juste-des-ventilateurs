@@ -199,7 +199,7 @@ class TestSupervisor:
         """Quand risk_score >= threshold, le RPM doit etre RPM_HIGH."""
         sup = self._make_supervisor(tmp_path, mode="ml")
         state = self._make_state()
-        rpm = sup._decide_rpm(state, risk_score=RISK_THRESHOLD + 0.01)
+        rpm, _, _ = sup._decide_rpm(state, risk_score=RISK_THRESHOLD + 0.01)
         assert rpm == RPM_HIGH
         sup.dec_logger.close()
 
@@ -207,7 +207,7 @@ class TestSupervisor:
         """Mode native -> decision = -1 (pas d'intervention)."""
         sup = self._make_supervisor(tmp_path, mode="native")
         state = self._make_state()
-        rpm = sup._decide_rpm(state, risk_score=0.0)
+        rpm, _, _ = sup._decide_rpm(state, risk_score=0.0)
         assert rpm == -1
         sup.dec_logger.close()
 
@@ -244,4 +244,4 @@ class TestSupervisor:
         )
         sup.run(duration_s=0.35)  # ~3 cycles de 0.1s
         assert sup.dec_logger._count >= 0  # Pas d'erreur
-        sup.dec_logger.close()
+        sup.dec_log

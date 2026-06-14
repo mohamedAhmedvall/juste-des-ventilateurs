@@ -1,13 +1,13 @@
 # Roadmap — Juste des Ventilateurs
 
 Projet M2 Data/IA — LaPlateforme_  
-Version 1.6 — Juin 2026
+Version 1.7 — Juin 2026
 
 ---
 
 ## Vue d'ensemble
 
-Le projet est organisé en 7 phases successives, chacune livrant des artefacts exploitables. Les phases 1 à 3 sont des fondations ; les phases 4 à 6 constituent le cœur ML et l'évaluation comparative. La phase 7 renforce la robustesse du superviseur en conditions réelles.
+Le projet est organisé en 8 phases successives, chacune livrant des artefacts exploitables. Les phases 1 à 3 sont des fondations ; les phases 4 à 6 constituent le cœur ML et l'évaluation comparative. La phase 7 renforce la robustesse du superviseur en conditions réelles. La phase 8 enrichit l'oracle d'entraînement du contrôleur supervisé pour qu'il intègre la trajectoire thermique.
 
 ```
 Phase 1 : Prise en main             [Semaine 1]
@@ -563,6 +563,98 @@ docker compose up supervisor
 # Notebook analyse MQTT
 jupyter notebook notebooks/06_phase7_mqtt_supervision.ipynb
 ```
+
+---
+
+## Phase 8 — Oracle trajectoire : contrôleur supervisé context-aware
+
+**Objectif :** Remplacer l'oracle myope du contrôleur supervisé (basé uniquement sur `temperature_c` instantanée) par un oracle enrichi qui intègre la trajectoire thermique et le risque de panne, afin que le modèle apprenne à anticiper les montées et à descendre les RPM de façon progressive lors du refroidissement.
+
+### Diagnostic
+
+L'oracle actuel (`add_control_labels` dans `features/labeler.py`) calcule `action_class` comme une fonction purement instantanée :
+
+```python
+temp_ratio = (T - 0.5·T_shutdown) / (0.5·T_shutdown)
+action_class = floor(temp_ratio × n_levels)
+```
+
+**Limites identifiées :**
+- Deux machines à T=75°C reçoivent le même label, qu'elles montent à +2°C/s ou descendent à -2°C/s
+- Le modèle entraîné sur cet oracle ne peut pas apprendre à anticiper : il réagit toujours "en retard"
+- Les features de trajectoire (`temp_delta_5s`, `temp_delta_30s`, `time_to_failure_s`) sont disponibles en entrée mais jamais exploitées dans les labels d'entraînement — incohérence features/labels
+
+### Solution : oracle trajectoire enrichi (`add_control_labels_v2`)
+
+L'oracle enrichi combine trois signaux :
+
+1. **Position thermique** (`temp_ratio`) — signal existant, pondéré α
+2. **Vitesse thermique** (`temp_delta_30s` normalisé) — monte vite → RPM plus élevé, descend → peut baisser, pondéré β
+3. **Urgence panne** (`time_to_failure_s`) — si panne dans < 60s → forcer RPM_HIGH, pondéré γ
+
+```python
+score = α·temp_ratio + β·clip(temp_delta_30s / DELTA_MAX, 0, 1) + γ·urgency
+action_class = floor(score × n_levels).clip(0, n_levels-1)
+```
+
+Avec `urgency = clip(1 - time_to_failure_s / HORIZON_S, 0, 1)` quand `time_to_failure_s` est disponible.
+
+**Effets attendus :**
+- Machine à T=75°C qui monte à +2°C/s → label RPM élevé (anticipation)
+- Machine à T=75°C qui descend à -2°C/s → label RPM plus bas (descente autorisée)
+- Machine avec panne dans 30s → label RPM_HIGH quelle que soit la T actuelle
+
+### Tâches
+
+- [ ] `features/labeler.py` : ajouter `add_control_labels_v2()` avec oracle trajectoire
+  - Paramètres : `alpha=0.5`, `beta=0.3`, `gamma=0.2`, `delta_max_c=5.0`, `horizon_s=60`
+  - Conserver `add_control_labels()` existant pour compatibilité et comparaison
+  - Nouvelle colonne générée : `action_class_v2` (parallèle à `action_class`)
+- [ ] `features/labeler.py` : exposer `add_control_labels_v2` dans `label_names_control()`
+- [ ] `tests/test_phase8_oracle.py` : tests unitaires
+  - Montée rapide → action_class_v2 > action_class à même T
+  - Refroidissement → action_class_v2 ≤ action_class à même T
+  - Urgence panne (time_to_failure_s=20) → action_class_v2 = n_levels-1
+  - Machine froide sans trajectoire → action_class_v2 = 0
+  - Pas de régression sur `add_control_labels` existant
+- [ ] `evaluation/fan_control_eval.py` : supporter `label_col='action_class_v2'`
+- [ ] `04_train_fan_controllers.bat` : ajouter variante `--label action_class_v2`
+- [ ] Notebook `notebooks/04_fan_control.ipynb` : cellule comparative oracle v1 vs v2
+
+### Métriques de validation
+
+| Métrique | Oracle v1 (actuel) | Oracle v2 (cible) |
+|----------|-------------------|-------------------|
+| `action_accuracy` sur test | 0.735 | > 0.70 (acceptable si sécurité meilleure) |
+| `high_rpm_when_dangerous` | 0.646 | > 0.75 |
+| `mean_rpm` à froid (T<60°C) | ~1948 | < 1500 (descente effective) |
+| `nb_shutdowns` | 10 | ≤ 8 |
+
+### Commandes
+
+```bash
+# Régénérer les features avec le nouvel oracle
+ingest_gen_features.bat
+
+# Entraîner le contrôleur supervisé sur oracle v2
+python -m models.fan_control.train --label action_class_v2
+
+# Ou via le bat complet
+04_train_fan_controllers.bat
+
+# Tests Phase 8
+pytest tests/test_phase8_oracle.py -v
+
+# Évaluation comparative oracle v1 vs v2
+python -m evaluation.fan_control_eval --label action_class_v2
+```
+
+### Livrables
+
+- `features/labeler.py` (modifié — ajout `add_control_labels_v2`)
+- `tests/test_phase8_oracle.py` (nouveau)
+- `evaluation/fan_control_eval.py` (modifié — support `action_class_v2`)
+- `models/fan_control/saved/supervised_v2.joblib` (après ré-entraînement)
 
 ---
 

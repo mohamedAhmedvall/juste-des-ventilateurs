@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-RPM_LEVELS = {0, 1500, 2500, 3500, 4500}
+RPM_LEVELS = {800, 1500, 2500, 3500, 4500}
 
 # ---------------------------------------------------------------------------
 # Fixtures

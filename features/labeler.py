@@ -2,7 +2,7 @@
 
 Génère les labels supervisés pour :
   - Le modèle de prédiction de pannes (failure_60s, failure_30s, hot_30s)
-  - Le contrôleur supervisé (action_class)
+  - Le contrôleur supervisé (action_class, action_class_v2)
 
 Les labels sont calculés en regardant "vers l'avenir" (forward-looking) :
 à chaque pas de temps t, on regarde ce qui se passe dans les N secondes suivantes.
@@ -12,11 +12,14 @@ Convention des labels de panne :
   - 0 = pas d'incident prévu
 
 Convention des labels de contrôle :
-  - action_class ∈ {0, 1, 2, 3, 4} correspondant à RPM ∈ {0, 1500, 2500, 3500, 4500}
+  - action_class   : oracle v1 — basé sur temperature_c instantanée uniquement (myope)
+  - action_class_v2: oracle v2 (Phase 8) — trajectoire thermique + urgence panne
+    ∈ {0, 1, 2, 3, 4} correspondant à RPM ∈ {800, 1500, 2500, 3500, 4500}
 
 Usage typique :
     df = add_failure_labels(df, t_shutdown_c=88.0, tick_hz=1.0)
-    df = add_control_labels(df, t_shutdown_c=88.0)
+    df = add_control_labels(df, t_shutdown_c=88.0)           # oracle v1
+    df = add_control_labels_v2(df, t_shutdown_c=88.0)        # oracle v2 (Phase 8)
 """
 from __future__ import annotations
 
@@ -158,14 +161,124 @@ def add_control_labels(
     return df
 
 
+def add_control_labels_v2(
+    df: pd.DataFrame,
+    t_shutdown_c: float = 88.0,
+    rpm_levels: list[int] | None = None,
+    alpha: float = 0.5,
+    beta: float = 0.3,
+    gamma: float = 0.2,
+    delta_max_c: float = 5.0,
+    horizon_s: float = 60.0,
+) -> pd.DataFrame:
+    """Oracle trajectoire enrichi — Phase 8.
+
+    Corrige la myopie de add_control_labels() en intégrant :
+      - la position thermique (comme v1)
+      - la vitesse de montée/descente thermique (temp_delta_30s)
+      - l'urgence panne (time_to_failure_s)
+
+    score(t) = alpha * temp_ratio
+             + beta  * clip(temp_delta_30s / delta_max_c, 0, 1)
+             + gamma * urgency
+
+    action_class_v2 = floor(score * n_levels).clip(0, n_levels-1)
+
+    Parameters
+    ----------
+    df          : DataFrame d'une machine avec features temporelles
+    t_shutdown_c: seuil de shutdown thermique (degC)
+    rpm_levels  : niveaux RPM discrets (defaut: RPM_LEVELS)
+    alpha       : poids position thermique (defaut: 0.5)
+    beta        : poids vitesse thermique (defaut: 0.3)
+    gamma       : poids urgence panne (defaut: 0.2)
+    delta_max_c : normalisation de temp_delta_30s en degC (defaut: 5.0)
+    horizon_s   : horizon d'urgence en secondes (defaut: 60.0)
+
+    Colonnes ajoutees
+    -----------------
+    action_class_v2 : index dans rpm_levels (0..n_levels-1)
+    """
+    df = df.copy()
+    levels = rpm_levels if rpm_levels is not None else RPM_LEVELS
+    n_levels = len(levels)
+
+    if "temperature_c" not in df.columns:
+        logger.warning("'temperature_c' manquant — labels controle v2 ignores.")
+        return df
+
+    temp = df["temperature_c"].values
+
+    # --- Composante 1 : position thermique (identique oracle v1) ---
+    temp_ratio = np.clip(
+        (temp - (t_shutdown_c * 0.5)) / (t_shutdown_c * 0.5), 0.0, 1.0
+    )
+
+    # --- Composante 2 : vitesse thermique ---
+    # Utilise temp_delta_30s si disponible, sinon temp_delta_5s, sinon 0
+    if "temp_delta_30s" in df.columns:
+        delta = df["temp_delta_30s"].fillna(0.0).values
+    elif "temp_delta_5s" in df.columns:
+        delta = df["temp_delta_5s"].fillna(0.0).values
+        # Normaliser sur l'horizon equivalent (5s vs 30s)
+        delta = delta * (30.0 / 5.0)
+    else:
+        logger.debug("Aucune feature temp_delta_* disponible — composante vitesse ignoree.")
+        delta = np.zeros(len(df))
+
+    # Clip [0, 1] : on penalise la montee, pas la descente (beta=0 si descente)
+    velocity_score = np.clip(delta / max(delta_max_c, 1e-6), 0.0, 1.0)
+
+    # --- Composante 3 : urgence panne ---
+    if "time_to_failure_s" in df.columns:
+        ttf = df["time_to_failure_s"].values
+        # NaN = aucune panne prevue -> urgence 0
+        urgency = np.where(
+            np.isfinite(ttf),
+            np.clip(1.0 - ttf / max(horizon_s, 1.0), 0.0, 1.0),
+            0.0,
+        )
+    else:
+        logger.debug("'time_to_failure_s' absent — composante urgence ignoree.")
+        urgency = np.zeros(len(df))
+
+    # --- Score composite ---
+    score = alpha * temp_ratio + beta * velocity_score + gamma * urgency
+    # score est dans [0, alpha+beta+gamma] = [0, 1.0] avec les defauts
+    # On le norme pour garantir que score=1.0 -> classe max
+    score_norm = np.clip(score, 0.0, 1.0)
+
+    action_class_v2 = np.floor(score_norm * n_levels).astype(int).clip(0, n_levels - 1)
+
+    # Forcer RPM max si en zone degradee, tres proche du shutdown, ou panne imminente
+    critical = np.zeros(len(df), dtype=bool)
+    if "status" in df.columns:
+        margin = t_shutdown_c - temp
+        critical |= (df["status"].isin(["degraded"])).values | (margin < (t_shutdown_c * 0.05))
+    # Panne dans moins de 1/3 de l'horizon -> RPM_HIGH obligatoire
+    if "time_to_failure_s" in df.columns:
+        ttf = df["time_to_failure_s"].values
+        critical |= np.isfinite(ttf) & (ttf < (horizon_s / 3.0))
+    action_class_v2[critical] = n_levels - 1
+
+    df["action_class_v2"] = action_class_v2
+
+    return df
+
+
 def label_names_failure() -> list[str]:
     """Labels de prédiction de pannes produits par add_failure_labels."""
     return ["failure_60s", "failure_30s", "hot_30s", "time_to_failure_s"]
 
 
 def label_names_control() -> list[str]:
-    """Labels de contrôle produits par add_control_labels."""
+    """Labels de contrôle produits par add_control_labels (oracle v1)."""
     return ["optimal_rpm", "action_class"]
+
+
+def label_names_control_v2() -> list[str]:
+    """Labels de contrôle produits par add_control_labels_v2 (oracle v2, Phase 8)."""
+    return ["action_class_v2"]
 
 
 # ---------------------------------------------------------------------------

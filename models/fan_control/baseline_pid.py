@@ -8,8 +8,9 @@ Erreur : e(t) = temperature_c(t) - T_target
 Commande continue :
     u(t) = Kp*e(t) + Ki*integral(e) + Kd*de/dt
 
-La commande est ensuite clampée dans [0, rpm_max] puis arrondie au
-niveau RPM discret le plus proche parmi {0, 1500, 2500, 3500, 4500}.
+La commande est ensuite clampée dans [rpm_min, rpm_max] puis arrondie au
+niveau RPM discret le plus proche parmi {800, 1500, 2500, 3500, 4500}.
+800 RPM est le plancher minimal de ventilation (Phase 7.5).
 
 Les gains Kp, Ki, Kd sont optimisés par grid search sur les données
 d'entraînement (minimisation du nb de shutdowns + énergie).
@@ -23,8 +24,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-RPM_LEVELS   = [0, 1500, 2500, 3500, 4500]
-RPM_MIN      = 0
+RPM_LEVELS   = [800, 1500, 2500, 3500, 4500]
+RPM_MIN      = 800
 RPM_MAX      = 4500
 DEFAULT_T_SHUTDOWN = 88.0  # fallback si non fourni dans les données
 
