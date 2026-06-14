@@ -92,15 +92,19 @@ juste-des-ventilateurs/
 │   └── decision_logger.py      # Logger JSONL des décisions
 │
 ├── evaluation/                 # Protocole et métriques comparatives
-│   ├── benchmark.py            # Comparaison des couples prédicteur/contrôleur
-│   └── robustness.py           # Tests de robustesse multi-scénarios
+│   ├── benchmark.py            # Comparaison offline des contrôleurs
+│   ├── robustness.py           # Tests de robustesse multi-scénarios
+│   ├── fan_control_eval.py     # Évaluation comparative (oracle v1 vs v2)
+│   └── closed_loop_eval.py     # Évaluation boucle fermée + PUE (Phase 9) 🔲
 │
 ├── notebooks/                  # Analyses et explorations
-│   ├── 01_exploration.ipynb    # Exploration MQTT et API
-│   ├── 02_feature_analysis.ipynb
+│   ├── 01_ingestion_eda.ipynb
+│   ├── 02_feature_engineering.ipynb
 │   ├── 03_failure_prediction.ipynb
 │   ├── 04_fan_control.ipynb
-│   └── 05_evaluation_comparative.ipynb
+│   ├── 05_evaluation_comparative.ipynb
+│   ├── 06_phase7_mqtt_supervision.ipynb
+│   └── 07_closed_loop_evaluation.ipynb  # Phase 9 🔲
 │
 ├── data/                       # Datasets (ignorés par git, sauf schéma)
 │   ├── schema.md               # Description du schéma unifié
@@ -285,10 +289,57 @@ RISK_LOG_THRESHOLD=0.05       # log machine seulement si risk > seuil
 
 ---
 
+## Évaluation en boucle fermée — Phase 9
+
+Les évaluations offline (phases 5-6) rejoueront des données historiques sans modifier la simulation. La **Phase 9** pilote effectivement jumeaux-chauds en temps réel et mesure l'impact causal de chaque contrôleur.
+
+### Pourquoi la boucle fermée ?
+
+Dans l'évaluation offline, `nb_shutdowns` et `T_mean` sont identiques pour tous les contrôleurs — ils correspondent aux valeurs du scénario enregistré. La boucle fermée laisse la physique du simulateur recalculer les températures en réponse aux RPM commandés, ce qui permet de mesurer :
+
+- **Pannes évitées** : shutdowns qui n'auraient pas eu lieu avec un meilleur contrôle (distinctes des pannes inévitables causées par `fan_failure` active)
+- **PUE réel** : `(power_compute + power_fans) / power_compute`, calculé tick par tick
+- **Économie énergétique** : kWh fans économisés par rapport au baseline full-speed
+
+### Lancer une évaluation boucle fermée
+
+```bash
+# Prérequis : jumeaux-chauds en cours d'exécution
+docker compose -f ../jumeaux-chauds/docker-compose.yml up -d
+
+# Comparer les contrôleurs sur le scénario stress (10 min)
+python -m evaluation.closed_loop_eval \
+  --scenario stress \
+  --duration 600 \
+  --controllers native supervised supervised_v2 score_controller baseline_pid
+
+# Scénario heatwave (montée T progressive)
+python -m evaluation.closed_loop_eval --scenario heatwave --duration 600
+
+# Résultats :
+#   evaluation/results/closed_loop_results_stress.json
+#   evaluation/results/closed_loop_results_heatwave.json
+
+# Visualisation comparative (PUE, pannes, Pareto sécurité/énergie)
+jupyter notebook notebooks/07_closed_loop_evaluation.ipynb
+```
+
+### Métriques Phase 9
+
+| Métrique | Description |
+|---------|-------------|
+| `nb_shutdowns_cl` | Arrêts thermiques en boucle fermée |
+| `nb_avoidable_avoided` | Pannes évitables réellement évitées vs natif |
+| `pue_mean` | PUE moyen sur l'épisode (cible < 1.15) |
+| `energy_fans_kwh` | Énergie fans cumulée |
+| `energy_saved_pct` | Économie vs baseline full-speed (%) |
+
+---
+
 ## Documentation
 
-- [Roadmap](documents/roadmap.md) — Phases et livrables
-- [Spécifications techniques](documents/specifications.md) — Architecture détaillée, schémas, interfaces
+- [Roadmap](documents/roadmap.md) — Phases et livrables (Phases 1–9)
+- [Spécifications techniques](documents/specifications.md) — Architecture, interfaces, métriques Phase 9
 - [Rapport d'analyse](documents/rapport_analyse.md) — Résultats et conclusions (Phase 6)
 
 ---

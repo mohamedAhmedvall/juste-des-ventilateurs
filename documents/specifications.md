@@ -595,7 +595,242 @@ Chaque décision est loggée en JSONL avec :
 
 ---
 
-## 9. Configuration et déploiement
+## 9. Module Évaluation boucle fermée (`evaluation/closed_loop_eval.py`) — Phase 9
+
+### 9.1 Motivation
+
+L'évaluation offline (Phase 5-6) mesure la fidélité d'un contrôleur à l'oracle sur des données historiques figées. Elle ne peut pas mesurer l'impact réel sur la thermique, car le simulateur n'est pas piloté. Deux conséquences :
+
+- `nb_shutdowns` identique pour tous les contrôleurs (les arrêts thermiques passés ne changent pas)
+- `T_mean` identique (les températures ne dépendent pas des RPM commandés a posteriori)
+- PUE non calculable (nécessite les puissances mesurées en temps réel)
+
+L'évaluation en boucle fermée pilote effectivement jumeaux-chauds, laisse la physique recalculer les températures en réponse aux RPM commandés, et mesure les métriques réelles.
+
+### 9.2 Architecture du module
+
+```
+evaluation/
+└── closed_loop_eval.py
+    ├── ClosedLoopRunner          # orchestre un épisode complet
+    │   ├── reset_episode()       # change scénario via PUT /simulation/scenario
+    │   ├── decision_step()       # un tick : GET status → décider → PUT fan_speed → log
+    │   └── aggregate_metrics()   # calcule PUE, shutdowns, économies à la fin
+    ├── FaultClassifier           # distingue pannes évitables / inévitables
+    └── main()                    # CLI : compare contrôleurs sur scénario
+```
+
+**Dépendances :**
+- `supervisor/online_features.py` — OnlineFeatureBuffer (réutilisé tel quel)
+- `models/failure_prediction/logistic_regression.py` — prédicteur risk_score
+- `models/fan_control/*.py` — contrôleurs à comparer
+- `httpx` — appels REST jumeaux-chauds
+
+### 9.3 Interface `ClosedLoopRunner`
+
+```python
+class ClosedLoopRunner:
+    def __init__(
+        self,
+        controller: FanController,
+        predictor: FailurePredictor | None = None,
+        api_url: str = "http://localhost:8000",
+        dt_s: float = 5.0,           # intervalle de décision (secondes réelles)
+        duration_s: float = 600.0,   # durée de l'épisode (secondes réelles)
+        scenario: str = "stress",
+        dry_run: bool = False,
+    ): ...
+
+    def run(self) -> dict:
+        """Pilote jumeaux-chauds pendant duration_s et retourne les métriques."""
+        ...
+
+    def aggregate_metrics(self, records: list[dict]) -> dict:
+        """Calcule les métriques à partir des enregistrements tick-par-tick."""
+        ...
+```
+
+**Enregistrement par tick :**
+
+```json
+{
+  "ts":               "2026-06-14T10:00:05Z",
+  "machine_id":       "srv-worker-01",
+  "temperature_c":    74.2,
+  "status":           "on",
+  "has_fan_fault":    false,
+  "power_w":          342.1,
+  "power_fans_w":     47.3,
+  "rpm_commanded":    3500,
+  "rpm_previous":     2500,
+  "risk_score":       0.41,
+  "risk_override":    false,
+  "hot30s_override":  false
+}
+```
+
+### 9.4 Interface `FaultClassifier`
+
+```python
+class FaultClassifier:
+    @staticmethod
+    def is_avoidable(record: dict) -> bool:
+        """
+        Retourne True si le shutdown/degraded est potentiellement évitable.
+        Critères d'inévitabilité :
+          - has_fan_fault == True au moment du shutdown (RPM forcé à 0 par le simulateur)
+          - ou fan_fault active dans les 30s précédant le shutdown
+        """
+        ...
+
+    @staticmethod
+    def classify_episode(records: list[dict]) -> dict:
+        """
+        Retourne :
+          nb_shutdowns_total      : tous arrêts thermiques
+          nb_shutdowns_avoidable  : ceux sans fan_fault active
+          nb_shutdowns_inevitable : ceux avec fan_fault active
+        """
+        ...
+```
+
+**Principe de classification :**
+
+```
+Pour chaque tick où status passe à "degraded" ou "off" :
+  Si has_fan_fault == True dans les 30 ticks précédents → inévitable
+  Sinon → évitable
+```
+
+### 9.5 Métriques calculées
+
+**Métriques de sécurité :**
+
+| Métrique | Formule | Sens |
+|---------|---------|------|
+| `nb_shutdowns_cl` | Compte des `status == "off"` après "degraded" | ↓ mieux |
+| `nb_avoidable_cl` | Shutdowns sans fan_fault dans les 30s précédentes | ↓ mieux |
+| `nb_inevitable_cl` | Shutdowns avec fan_fault active | référence fixe |
+| `avoidable_avoided_pct` | `(nb_avoidable_natif - nb_avoidable_cl) / nb_avoidable_natif` | ↑ mieux |
+
+**Métriques énergétiques :**
+
+| Métrique | Formule | Sens |
+|---------|---------|------|
+| `pue_mean` | `mean( (power_compute_w + power_fans_w) / power_compute_w )` | ↓ mieux |
+| `pue_p95` | 95e percentile du PUE | ↓ mieux |
+| `energy_fans_kwh` | `sum(power_fans_w × dt_s) / 3 600 000` | ↓ mieux |
+| `energy_saved_pct` | `(energy_baseline_4500 - energy_fans) / energy_baseline_4500` | ↑ mieux |
+| `rpm_mean_cl` | Moyenne des RPM commandés | info |
+
+**Métriques thermiques :**
+
+| Métrique | Formule | Sens |
+|---------|---------|------|
+| `T_mean_cl` | Température moyenne toutes machines | ↓ mieux |
+| `T_max_cl` | Température maximale observée | ↓ mieux |
+| `pct_time_critical` | % ticks avec `T > 0.95 × t_shutdown` | ↓ mieux |
+
+### 9.6 Calcul du PUE
+
+```python
+# Par tick, pour une machine :
+power_it_w    = snapshot["power_w"]          # puissance totale mesurée par jumeaux-chauds
+power_fans_w  = (rpm / RPM_MAX)**3 * 300.0   # loi cubique (300W à RPM_MAX)
+power_compute = max(power_it_w - power_fans_w, 1.0)   # éviter division par zéro
+pue_tick      = (power_compute + power_fans_w) / power_compute
+
+# Sur l'épisode :
+pue_mean = mean(pue_tick for all ticks all machines)
+```
+
+**Valeurs de référence PUE :**
+
+| Contrôleur | PUE attendu |
+|-----------|------------|
+| `native` (auto jumeaux-chauds) | ~1.05–1.10 |
+| `baseline_fixed_4500` | ~1.25–1.35 (fans toujours à fond) |
+| `baseline_pid` | ~1.07–1.12 |
+| `supervised_v2` | cible < 1.12 |
+
+### 9.7 CLI et sorties
+
+**Invocation :**
+
+```bash
+python -m evaluation.closed_loop_eval \
+  --scenario stress \
+  --duration 600 \
+  --dt 5 \
+  --controllers native supervised supervised_v2 score_controller baseline_pid \
+  --output evaluation/results/closed_loop_results_stress.json \
+  --api-url http://localhost:8000
+```
+
+**Arguments :**
+
+| Argument | Défaut | Description |
+|---------|--------|-------------|
+| `--scenario` | `stress` | Scénario jumeaux-chauds |
+| `--duration` | `600` | Durée de chaque épisode (s réelles) |
+| `--dt` | `5` | Intervalle de décision (s réelles) |
+| `--controllers` | `all` | Liste des contrôleurs à comparer |
+| `--output` | auto | Fichier JSON de sortie |
+| `--dry-run` | False | Simule sans envoyer de commandes REST |
+| `--no-reset` | False | Ne pas changer de scénario entre épisodes |
+
+**Format de sortie JSON :**
+
+```json
+{
+  "scenario": "stress",
+  "duration_s": 600,
+  "dt_s": 5,
+  "timestamp": "2026-06-14T10:30:00Z",
+  "results": [
+    {
+      "controller": "supervised_v2",
+      "nb_shutdowns_cl": 3,
+      "nb_avoidable_cl": 1,
+      "nb_inevitable_cl": 2,
+      "avoidable_avoided_pct": 0.67,
+      "pue_mean": 1.09,
+      "pue_p95": 1.21,
+      "energy_fans_kwh": 0.048,
+      "energy_saved_pct": 0.83,
+      "T_mean_cl": 66.4,
+      "T_max_cl": 84.1,
+      "rpm_mean_cl": 2180
+    }
+  ]
+}
+```
+
+### 9.8 Notebook d'analyse (`notebooks/07_closed_loop_evaluation.ipynb`)
+
+**Contenu :**
+
+1. Chargement des résultats `closed_loop_results_{scenario}.json`
+2. Tableau comparatif toutes métriques par contrôleur
+3. Graphe Pareto sécurité / énergie (x = `energy_fans_kwh`, y = `nb_avoidable_cl`)
+4. Évolution temporelle de T, RPM et PUE pour chaque contrôleur (courbes superposées)
+5. Répartition pannes évitables / inévitables par scénario
+6. Comparaison oracle v1 vs oracle v2 : gain sur `avoidable_avoided_pct` et `pue_mean`
+
+### 9.9 Tests unitaires (`tests/test_phase9_closed_loop.py`)
+
+**Couverture minimale :**
+
+- `FaultClassifier.is_avoidable()` : shutdown avec fan_fault active → inévitable
+- `FaultClassifier.is_avoidable()` : shutdown sans fan_fault → évitable
+- `ClosedLoopRunner.aggregate_metrics()` : PUE calculé correctement depuis records mock
+- `ClosedLoopRunner.aggregate_metrics()` : `energy_fans_kwh` = somme cohérente
+- Aucune commande REST envoyée en mode `dry_run=True`
+- `main()` CLI : fonctionne avec `--dry-run` (sans jumeaux-chauds actif)
+
+---
+
+## 10. Configuration et déploiement
 
 ### 9.1 Variables d'environnement (`.env`)
 

@@ -658,6 +658,146 @@ python -m evaluation.fan_control_eval --label action_class_v2
 
 ---
 
+## Phase 9 — Évaluation en boucle fermée (closed-loop)
+
+**Objectif :** Mesurer le gain réel des contrôleurs en pilotant effectivement le simulateur jumeaux-chauds pendant un épisode complet, avec rétroaction thermique. Calculer PUE, pannes évitées vs inévitables, et économies énergétiques.
+
+### Contexte et limite de l'évaluation offline
+
+Les phases 5 et 6 évaluent les contrôleurs sur des données *historiques* (replay passif) : les RPM commandés ne modifient pas les températures passées, les métriques `nb_shutdowns` et `T_mean` sont donc celles du scénario d'origine, indépendantes de la politique testée. Cette évaluation mesure la fidélité du contrôleur à l'oracle, pas son impact réel.
+
+**Limites concrètes :**
+- `nb_shutdowns = 10` identique pour tous les contrôleurs (les temps sont figés)
+- `T_mean` identique pour tous (le simulateur n'a pas été piloté)
+- PUE non calculé (nécessite `power_compute_w` mesuré + `power_fans_w` commandé en temps réel)
+- Impossible de distinguer pannes évitables (RPM insuffisant) vs inévitables (fan_failure active)
+
+### Solution : évaluation en boucle fermée
+
+Un script `evaluation/closed_loop_eval.py` pilote jumeaux-chauds via son API REST en temps réel, applique chaque contrôleur pendant un épisode fixe, et enregistre les métriques effectives.
+
+**Principe :**
+```
+Pour chaque contrôleur C :
+  1. Démarrer jumeaux-chauds sur le scénario cible (ex : stress, x1)
+  2. Boucle de décision toutes les dt secondes réelles :
+       a. GET /cluster/status → températures, puissances, statuts
+       b. Calculer features depuis OnlineFeatureBuffer
+       c. Prédire risk_score → décider RPM(C)
+       d. PUT /machines/{id}/fan_speed (RPM commandé)
+       e. Enregistrer : ts, machine_id, T, rpm_commanded, power_w, status, fault_types
+  3. À la fin de l'épisode : agréger métriques par contrôleur
+```
+
+**Ce qui change par rapport à l'évaluation offline :**
+- Les températures évoluent en réponse aux RPM commandés (rétroaction physique réelle)
+- `nb_shutdowns` reflète vraiment l'efficacité du contrôleur
+- `power_fans_w` est mesuré à partir des RPM effectifs (loi cubique)
+- PUE calculable : `(power_compute + power_fans) / power_compute`
+
+### Distinction pannes évitables / inévitables
+
+Certaines pannes dans le scénario `stress` sont générées par `fan_failure` (RPM forcé à 0 indépendamment des commandes) — elles surchauffent la machine même à RPM_MAX commandé. Ces pannes sont **inévitables**.
+
+Les autres pannes résultent d'une accumulation thermique insuffisamment anticipée — **évitables** par un bon contrôleur.
+
+La métrique clé est `nb_avoidable_shutdowns_avoided` : parmi les pannes que le contrôleur natif n'aurait pas évitées mais qui ne sont pas liées à `fan_failure`, combien le contrôleur ML a-t-il préventies ?
+
+```
+panne_evitable = (status == "off" ou "degraded") ET (has_fan_fault == False)
+nb_avoidable_shutdowns = nb shutdowns natif sans fan_failure active
+nb_avoidable_shutdowns_avoided = nb_avoidable_shutdowns - nb_CL_shutdowns_sans_fan_failure
+```
+
+### Métriques cibles Phase 9
+
+| Métrique | Description | Sens |
+|---------|-------------|------|
+| `nb_shutdowns_cl` | Shutdowns observés en boucle fermée | ↓ mieux |
+| `nb_avoidable_avoided` | Pannes évitables réellement évitées vs natif | ↑ mieux |
+| `pue_mean` | PUE moyen sur l'épisode | ↓ mieux (cible < 1.15) |
+| `energy_fans_kwh` | Énergie fans cumulée sur l'épisode | ↓ mieux |
+| `energy_saved_vs_max` | Économie vs baseline_fixed_4500 (%) | ↑ mieux |
+| `T_mean_cl` | Température moyenne en boucle fermée | ↓ mieux |
+| `T_max_cl` | Température maximale atteinte | ↓ mieux |
+| `rpm_mean_cl` | RPM moyen commandé | info |
+
+### Architecture du module
+
+```
+evaluation/closed_loop_eval.py
+  ├── ClosedLoopRunner          # orchestre un épisode pour un contrôleur donné
+  │   ├── reset_episode()       # change scénario jumeaux-chauds via API
+  │   ├── decision_step()       # décision + commande + log d'un tick
+  │   └── aggregate_metrics()   # calcul PUE, shutdowns, économies
+  ├── FaultClassifier           # distingue pannes évitables vs inévitables
+  └── main() / CLI              # compare plusieurs contrôleurs sur un scénario
+```
+
+**Paramètres CLI :**
+```bash
+python -m evaluation.closed_loop_eval \
+  --scenario stress \
+  --duration 600 \
+  --dt 5 \
+  --controllers native supervised score_controller baseline_pid \
+  --output evaluation/results/closed_loop_results.json
+```
+
+### Protocole comparatif recommandé
+
+| Contrôleur | Rôle |
+|-----------|------|
+| `native` | Référence absolue (aucune intervention externe) |
+| `baseline_fixed_2500` | Baseline énergie intermédiaire |
+| `baseline_pid` | Baseline classique |
+| `supervised` (oracle v1) | ML sans trajectoire |
+| `supervised_v2` (oracle v2) | ML avec trajectoire (Phase 8) |
+| `score_controller` | Score multi-objectif |
+
+Scénarios recommandés : `stress` (pannes fréquentes) et `heatwave` (montée T progressive).
+
+### Tâches de développement
+
+- [ ] `evaluation/closed_loop_eval.py` : `ClosedLoopRunner`, `FaultClassifier`, CLI
+- [ ] `evaluation/closed_loop_eval.py` : calcul PUE (`1 + power_fans / power_compute`)
+- [ ] `evaluation/closed_loop_eval.py` : détection pannes inévitables (`fan_failure` active pendant shutdown)
+- [ ] `evaluation/results/closed_loop_results.json` : export résultats par contrôleur
+- [ ] `notebooks/07_closed_loop_evaluation.ipynb` : visualisation comparative, graphes PUE/temps, Pareto sécurité/énergie
+- [ ] `tests/test_phase9_closed_loop.py` : tests unitaires (FaultClassifier, métriques PUE, agrégation)
+
+### Livrables
+
+- `evaluation/closed_loop_eval.py`
+- `evaluation/results/closed_loop_results_{scenario}.json`
+- `notebooks/07_closed_loop_evaluation.ipynb`
+- `tests/test_phase9_closed_loop.py`
+
+### Commandes
+
+```bash
+# Lancer l'évaluation complète en boucle fermée (jumeaux-chauds doit tourner)
+python -m evaluation.closed_loop_eval --scenario stress --duration 600
+
+# Scénario heatwave pour tester la montée progressive
+python -m evaluation.closed_loop_eval --scenario heatwave --duration 600
+
+# Contrôleurs spécifiques
+python -m evaluation.closed_loop_eval --controllers native supervised_v2 --scenario stress
+
+# Résultats dans :
+#   evaluation/results/closed_loop_results_stress.json
+#   evaluation/results/closed_loop_results_heatwave.json
+
+# Visualisation
+jupyter notebook notebooks/07_closed_loop_evaluation.ipynb
+
+# Tests unitaires
+pytest tests/test_phase9_closed_loop.py -v
+```
+
+---
+
 ## Récapitulatif des livrables
 
 | Livrable | Phase | Priorité |
