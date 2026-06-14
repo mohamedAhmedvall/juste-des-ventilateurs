@@ -29,7 +29,7 @@ NON_FEATURE_COLS = {
     "fault_types", "fan_modes",
     # Labels (ne pas leaker)
     "failure_30s", "failure_60s", "hot_30s", "time_to_failure_s",
-    "optimal_rpm", "action_class",
+    "optimal_rpm", "action_class", "action_class_v2",
     # Colonnes 100% NaN observées
     "machines_total", "machines_on",
 }
