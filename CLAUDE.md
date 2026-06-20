@@ -1,127 +1,134 @@
 # CLAUDE.md
 
-Guidance for AI assistants (Claude Code and others) working in this repository.
+Guide pour les assistants IA (Claude Code et autres) travaillant dans ce dépôt.
 
-## Project overview
+## Présentation du projet
 
-**Juste des Ventilateurs** is a **predictive maintenance and thermal-regulation
-service** for a *simulated* datacenter. It consumes telemetry from the
-**jumeaux-chauds** digital twin (a separate project), predicts machine failures
-(overheating / degraded mode / thermal shutdown) with ML, and drives the cooling
-fans toward an optimal trade-off between **thermal safety** and **energy
-sobriety**.
+**Juste des Ventilateurs** est un **service de maintenance prédictive et de
+régulation thermique** pour un datacenter *simulé*. Il consomme la télémétrie du
+jumeau numérique **jumeaux-chauds** (projet séparé), anticipe les pannes
+(surchauffe / mode dégradé / arrêt thermique) par ML, et pilote les ventilateurs
+de refroidissement vers un compromis optimal entre **sécurité thermique** et
+**sobriété énergétique**.
 
-- **Domain language is French.** Code comments, docstrings, commit messages, and
-  documentation are written in French. Match this convention — keep new comments
-  and docs in French. Identifiers (functions, variables) are mostly English.
-- **Academic project** (M2 Data/IA, LaPlateforme_). Organized in numbered
-  *phases*; see `documents/roadmap.md`.
-- The service is **read-from-MQTT, command-via-REST**: it never runs the physics
-  itself — jumeaux-chauds owns the simulation.
+- **La langue du domaine est le français.** Commentaires de code, docstrings,
+  messages de commit et documentation sont rédigés en français. Respecte cette
+  convention — garde les nouveaux commentaires et docs en français. Les
+  identifiants (fonctions, variables) sont majoritairement en anglais.
+- **Projet académique** (M2 Data/IA, LaPlateforme_). Organisé en *phases*
+  numérotées ; voir `documents/roadmap.md`.
+- Le service est **lecture-via-MQTT, commande-via-REST** : il ne fait jamais
+  tourner la physique lui-même — c'est jumeaux-chauds qui possède la simulation.
 
-## Prerequisites & external dependency
+## Prérequis & dépendance externe
 
-This service does nothing useful on its own. **jumeaux-chauds must be running**
-and reachable:
-- MQTT broker on `:1883` — publishes telemetry/status/fault/summary on topics
+Ce service ne sert à rien seul. **jumeaux-chauds doit être lancé** et accessible :
+- Broker MQTT sur `:1883` — publie telemetry/status/fault/summary sur les topics
   `dt/{cluster}/{machine}/...`
-- REST API on `:8000` — `GET /cluster/status`, `PUT /machines/{id}/fan_speed`,
+- API REST sur `:8000` — `GET /cluster/status`, `PUT /machines/{id}/fan_speed`,
   `PUT /machines/{id}/fan_mode`
 
-Python **3.11+** required. Configuration is read from environment variables
-(`.env`, see `.env.example`).
+Python **3.11+** requis. La configuration est lue depuis des variables
+d'environnement (`.env`, voir `.env.example`).
 
-## Repository layout
+## Structure du dépôt
 
 ```
-ingest/        Phase 2 — MQTT collection → normalized Parquet datasets
-  mqtt_subscriber.py   async subscriber (auto-reconnect, backoff) · CLI entrypoint
-  normalizer.py        payload → unified schema (4 message types)
-  dataset_exporter.py  Parquet export partitioned by episode/machine
-features/      Phase 3 — offline feature engineering
-  temporal.py · contextual.py · energy.py   feature builders
+ingest/        Phase 2 — collecte MQTT → datasets Parquet normalisés
+  mqtt_subscriber.py   subscriber async (reconnexion auto, backoff) · point d'entrée CLI
+  normalizer.py        payload → schéma unifié (4 types de messages)
+  dataset_exporter.py  export Parquet partitionné par épisode/machine
+features/      Phase 3 — feature engineering hors-ligne
+  temporal.py · contextual.py · energy.py   constructeurs de features
   labeler.py           failure_60s / failure_30s / hot_30s + action_class (oracle)
-  pipeline.py          raw → features+labels · CLI entrypoint
+  pipeline.py          brut → features+labels · point d'entrée CLI
 models/
   failure_prediction/  baseline_threshold, logistic_regression, random_forest,
                        gradient_boosting, splitter
   fan_control/         baseline_fixed/threshold/pid, supervised_controller,
                        score_controller
-supervisor/    Real-time supervision service
-  supervisor.py        decision loop (predict → decide → command) · CLI entrypoint
-  online_features.py   OnlineFeatureBuffer — per-machine sliding windows
-  mqtt_telemetry.py    live telemetry consumer
-  decision_logger.py   JSONL decision log
-evaluation/    Offline comparative benchmarks
+supervisor/    Service de supervision temps réel
+  supervisor.py        boucle de décision (predict → decide → command) · point d'entrée CLI
+  online_features.py   OnlineFeatureBuffer — fenêtres glissantes par machine
+  mqtt_telemetry.py    consumer de télémétrie en direct
+  decision_logger.py   journal JSONL des décisions
+evaluation/    Benchmarks comparatifs hors-ligne
   benchmark.py · robustness.py · fan_control_eval.py · failure_prediction_eval.py
-notebooks/     01..06 Jupyter analyses (ingestion, features, prediction,
-               control, comparison, MQTT supervision)
-data/          datasets (git-ignored except schema.md) — raw/ and processed/
+notebooks/     Analyses Jupyter 01..06 (ingestion, features, prédiction,
+               contrôle, comparaison, supervision MQTT)
+data/          datasets (ignorés par git sauf schema.md) — raw/ et processed/
 documents/     roadmap.md, specifications.md, rapport_analyse.md
-tests/         pytest suite (per-phase)
-*.bat          Windows workflow runners (01..05, see below)
+tests/         suite pytest (par phase)
+*.bat          runners de workflow Windows (01..05, voir plus bas)
 ```
 
-> **Note on the README:** `README.md` documents some **Phase 9** items
-> (`evaluation/closed_loop_eval.py`, `notebooks/07_closed_loop_evaluation.ipynb`,
-> closed-loop metrics) that are **planned but not yet present** in the codebase.
-> Do not assume those files exist — verify before referencing them. The roadmap
-> currently tops out at Phase 7/8 in code (`tests/test_phase8_oracle.py`).
+> **Note sur le README :** `README.md` documente certains éléments de la
+> **Phase 9** (`evaluation/closed_loop_eval.py`,
+> `notebooks/07_closed_loop_evaluation.ipynb`, métriques boucle fermée) qui sont
+> **prévus mais pas encore présents** dans le code. Ne suppose pas que ces
+> fichiers existent — vérifie avant d'y faire référence. Dans le code, la roadmap
+> s'arrête actuellement à la Phase 7/8 (`tests/test_phase8_oracle.py`).
 
-## Core data flow
+## Flux de données principal
 
-1. **Ingest** — `mqtt_subscriber` collects telemetry → `normalizer` maps to the
-   unified schema (see `data/schema.md`) → `dataset_exporter` writes
+1. **Ingest** — `mqtt_subscriber` collecte la télémétrie → `normalizer` la mappe
+   vers le schéma unifié (voir `data/schema.md`) → `dataset_exporter` écrit
    `data/raw/episode=NNN/machine=mXX/part-*.parquet` + `metadata.json`.
-2. **Features** — `features.pipeline` turns raw telemetry into the ML dataset in
-   `data/processed/episode=NNN/`, applying temporal → contextual → energy
-   features, then failure/control labels, dropping warmup rows and critical-NaN
-   rows.
-3. **Train/eval** — `evaluation.failure_prediction_eval` trains failure models;
-   `evaluation.fan_control_eval` evaluates controllers; `evaluation.benchmark` /
-   `evaluation.robustness` produce comparative metrics in
-   `evaluation/results/*.json` (label suffix in filename).
-4. **Supervise** — `supervisor.supervisor` runs the live loop: MQTT telemetry →
-   `OnlineFeatureBuffer` → predict risk → decide RPM → `PUT fan_speed`, with a
-   REST `GET /cluster/status` fallback when MQTT is unavailable.
+2. **Features** — `features.pipeline` transforme la télémétrie brute en dataset
+   ML dans `data/processed/episode=NNN/`, en appliquant les features temporal →
+   contextual → energy, puis les labels failure/control, en retirant les lignes
+   de warmup et les lignes à NaN critiques.
+3. **Train/eval** — `evaluation.failure_prediction_eval` entraîne les modèles de
+   panne ; `evaluation.fan_control_eval` évalue les contrôleurs ;
+   `evaluation.benchmark` / `evaluation.robustness` produisent les métriques
+   comparatives dans `evaluation/results/*.json` (suffixe label dans le nom).
+4. **Supervise** — `supervisor.supervisor` exécute la boucle temps réel :
+   télémétrie MQTT → `OnlineFeatureBuffer` → prédire le risque → décider le RPM →
+   `PUT fan_speed`, avec un fallback REST `GET /cluster/status` si MQTT est
+   indisponible.
 
-### Failure-prediction labels
+### Labels de prédiction de panne
 
-| Label         | Horizon | Use |
-|---------------|---------|-----|
-| `failure_60s` | 60 s | **default**, used by the supervisor |
-| `failure_30s` | 30 s | more precise, shorter lead time |
-| `hot_30s`     | 30 s | thermal alert (temp > 95 % of shutdown threshold) |
+| Label         | Horizon | Usage |
+|---------------|---------|-------|
+| `failure_60s` | 60 s | **par défaut**, utilisé par le superviseur |
+| `failure_30s` | 30 s | plus précis, préavis plus court |
+| `hot_30s`     | 30 s | alerte thermique (temp > 95 % du seuil d'arrêt) |
 
-Most workflow scripts/tools take a `--label` argument defaulting to
-`failure_60s`.
+La plupart des scripts/outils de workflow prennent un argument `--label` valant
+`failure_60s` par défaut.
 
-### Supervisor decision constants (`supervisor/supervisor.py`)
+### Constantes de décision du superviseur (`supervisor/supervisor.py`)
 
-- `RPM_LEVELS = [800, 1500, 2500, 3500, 4500]` — discrete fan setpoints.
-- `RISK_THRESHOLD = 0.60` — above this risk score, override to `RPM_HIGH` (4500).
-- `HOT30S_THRESHOLD` (env, default 0.5) — overheat override.
-- `RISK_LOG_THRESHOLD` (env, default 0.05) — only log machines above this risk.
-- Decisions fire every `DECISION_INTERVAL_TICKS` *simulated* ticks (1 tick = 1 s
-  simulated), so behavior is independent of simulation speed.
+- `RPM_LEVELS = [800, 1500, 2500, 3500, 4500]` — consignes de ventilation
+  discrètes.
+- `RISK_THRESHOLD = 0.60` — au-dessus de ce score de risque, override vers
+  `RPM_HIGH` (4500).
+- `HOT30S_THRESHOLD` (env, défaut 0.5) — override surchauffe.
+- `RISK_LOG_THRESHOLD` (env, défaut 0.05) — ne logue une machine qu'au-dessus de
+  ce risque.
+- Les décisions se déclenchent tous les `DECISION_INTERVAL_TICKS` ticks
+  *simulés* (1 tick = 1 s simulée), donc le comportement est indépendant de la
+  vitesse de simulation.
 
-## Common commands
+## Commandes courantes
 
-Run from the repo root. The `*.bat` files are convenience wrappers for Windows;
-on Linux/Mac call the underlying `python -m ...` commands directly.
+À lancer depuis la racine du dépôt. Les fichiers `*.bat` sont des wrappers de
+confort pour Windows ; sous Linux/Mac, appelle directement les commandes
+`python -m ...` sous-jacentes.
 
 ```bash
-# Setup
+# Installation
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && pip install -e .
-cp .env.example .env            # then edit for your jumeaux-chauds host
+cp .env.example .env            # puis éditer pour ton hôte jumeaux-chauds
 
-# Tests (markers: "slow" integration tests excluded by default)
+# Tests (markers : tests d'intégration "slow" exclus par défaut)
 pytest tests/ -v
 pytest tests/ -v -m "not slow"
 pytest tests/test_phase4_models.py -v
 
-# Ingest one episode
+# Ingérer un épisode
 python -m ingest.mqtt_subscriber --duration 600 --episode 001 --scenario nominal
 python -m ingest.mqtt_subscriber --continuous --episode 001 --scenario stress
 
@@ -131,74 +138,79 @@ python -m features.pipeline \
   --output data/processed/episode=001 \
   --config data/raw/episode=001/metadata.json
 
-# Train / evaluate (label-parameterized)
+# Entraînement / évaluation (paramétré par label)
 python -m evaluation.failure_prediction_eval --label failure_60s   # 03_train_models.bat
 python -m evaluation.fan_control_eval --label failure_60s --models all --output evaluation/results/fan_control_results_failure_60s.json
 python -m evaluation.benchmark --label failure_60s                 # 05_benchmark_offline_metrics.bat
 python -m evaluation.robustness --label failure_60s
-python ingest_quick_EDA.py --processed-only                        # quick EDA
+python ingest_quick_EDA.py --processed-only                        # EDA rapide
 
-# Run the supervisor
+# Lancer le superviseur
 python -m supervisor.supervisor --mode ml --duration 300 --dry-run
 python -m supervisor.supervisor --mode threshold
 
-# Docker (jumeaux-chauds must be reachable; uses host.docker.internal)
+# Docker (jumeaux-chauds doit être accessible ; utilise host.docker.internal)
 docker compose up --build supervisor
 ```
 
-### Batch-script map (Windows runners)
+### Correspondance des scripts .bat (runners Windows)
 
-| Script | Underlying step |
-|--------|-----------------|
-| `01_ingest_mqtt_simulations.bat` | collect the 6 scenarios via MQTT |
-| `02_ingest_gen_features.bat [NNN]` | run `features.pipeline` per episode |
-| `03_train_models.bat [label]` | failure-prediction training/eval |
-| `04_train_fan_controllers.bat` | controller training/eval |
-| `05_benchmark_offline_metrics.bat [label]` | benchmark + robustness |
-| `03_04_05_run_all_labels.bat` | run 03–05 across all 3 labels |
-| `build-clean-app.bat` | full Docker rebuild |
+| Script | Étape sous-jacente |
+|--------|--------------------|
+| `01_ingest_mqtt_simulations.bat` | collecte les 6 scénarios via MQTT |
+| `02_ingest_gen_features.bat [NNN]` | lance `features.pipeline` par épisode |
+| `03_train_models.bat [label]` | entraînement/éval de prédiction de panne |
+| `04_train_fan_controllers.bat` | entraînement/éval des contrôleurs |
+| `05_benchmark_offline_metrics.bat [label]` | benchmark + robustesse |
+| `03_04_05_run_all_labels.bat` | lance 03–05 sur les 3 labels |
+| `build-clean-app.bat` | rebuild Docker complet |
 
-## Conventions & gotchas
+## Conventions & pièges
 
-- **Module entrypoints:** runnable modules use `python -m <pkg>.<module>` with
-  `argparse`. CLI modules: `ingest.mqtt_subscriber`, `features.pipeline`,
-  `supervisor.supervisor`, and the four `evaluation.*` scripts.
-- **`from __future__ import annotations`** is used throughout — keep it on new
-  modules.
-- **Saved models** live under `models/*/saved/` (joblib). These dirs are
-  git-ignored and produced by the training scripts; don't assume they're present
-  in a fresh clone — run training first, or tests that need them will skip/fail.
-- **xgboost stub isolation:** `tests/conftest.py` strips a fake `xgboost` stub
-  that `test_phase7_supervisor.py` may inject, so real joblib unpickling works in
-  other phases. Don't remove this fixture; if you touch xgboost imports in tests,
-  preserve the stub-cleanup behavior.
-- **Logging:** the supervisor sets `httpx`/`httpcore` to WARNING to avoid
-  per-request noise. Follow that pattern rather than re-enabling verbose HTTP
-  logs.
-- **Data is reproducible & git-ignored:** everything under `data/` (except
-  `data/schema.md`) is regenerated from ingestion + features. Never commit
-  datasets or trained models.
-- **Time semantics:** "ticks" are *simulated* seconds, not wall-clock. Keep
-  decision cadence in tick units (`DECISION_INTERVAL_TICKS`), reserving real
-  seconds (`DECISION_INTERVAL_S`) for the REST fallback path only.
-- **Online vs offline features:** the supervisor can only compute a subset of
-  features live (`ONLINE_FEATURES` in `supervisor.py`). When adding model
-  features, ensure they're derivable from `OnlineFeatureBuffer` or the predictor
-  will break at runtime even if offline metrics look fine.
+- **Points d'entrée des modules :** les modules exécutables utilisent
+  `python -m <pkg>.<module>` avec `argparse`. Modules CLI :
+  `ingest.mqtt_subscriber`, `features.pipeline`, `supervisor.supervisor`, et les
+  quatre scripts `evaluation.*`.
+- **`from __future__ import annotations`** est utilisé partout — garde-le sur les
+  nouveaux modules.
+- **Modèles sérialisés** sous `models/*/saved/` (joblib). Ces répertoires sont
+  ignorés par git et produits par les scripts d'entraînement ; ne suppose pas
+  qu'ils sont présents dans un clone neuf — lance d'abord l'entraînement, sinon
+  les tests qui en dépendent échoueront/seront ignorés.
+- **Isolation du stub xgboost :** `tests/conftest.py` retire un faux stub
+  `xgboost` que `test_phase7_supervisor.py` peut injecter, pour que le
+  dépicklage joblib fonctionne dans les autres phases. Ne supprime pas cette
+  fixture ; si tu touches aux imports xgboost dans les tests, préserve ce
+  nettoyage du stub.
+- **Logging :** le superviseur met `httpx`/`httpcore` en WARNING pour éviter le
+  bruit par requête. Suis ce pattern plutôt que de réactiver les logs HTTP
+  verbeux.
+- **Données reproductibles & ignorées par git :** tout ce qui est sous `data/`
+  (sauf `data/schema.md`) est régénéré depuis l'ingestion + les features. Ne
+  commite jamais de datasets ni de modèles entraînés.
+- **Sémantique du temps :** les "ticks" sont des secondes *simulées*, pas du
+  temps réel. Garde la cadence de décision en ticks (`DECISION_INTERVAL_TICKS`),
+  en réservant les secondes réelles (`DECISION_INTERVAL_S`) au seul chemin de
+  fallback REST.
+- **Features online vs offline :** le superviseur ne peut calculer en direct
+  qu'un sous-ensemble de features (`ONLINE_FEATURES` dans `supervisor.py`). En
+  ajoutant des features au modèle, assure-toi qu'elles sont dérivables depuis
+  `OnlineFeatureBuffer`, sinon le prédicteur cassera à l'exécution même si les
+  métriques offline semblent correctes.
 
-## Git workflow
+## Workflow git
 
-- Develop on the assigned feature branch; never push to `main` without explicit
-  permission. Push with `git push -u origin <branch>`.
-- Commit messages are in French and follow Conventional-Commits-style prefixes
-  (`feat`, `fix`, `docs`, often phase-scoped, e.g. `feat(phase8): ...`). Match
-  this style.
-- Do **not** open a pull request unless explicitly asked.
+- Développe sur la branche de feature assignée ; ne pousse jamais sur `main` sans
+  permission explicite. Pousse avec `git push -u origin <branche>`.
+- Les messages de commit sont en français et suivent des préfixes de style
+  Conventional Commits (`feat`, `fix`, `docs`, souvent scopés par phase, ex.
+  `feat(phase8): ...`). Respecte ce style.
+- N'ouvre **pas** de pull request sauf demande explicite.
 
-## Where to learn more
+## Pour aller plus loin
 
-- `documents/roadmap.md` — phase-by-phase plan and deliverables.
-- `documents/specifications.md` — technical specs, interfaces, metrics.
-- `documents/rapport_analyse.md` — analysis report / results.
-- `data/schema.md` — unified telemetry schema and Parquet partitioning.
-- `README.md` — user-facing quickstart (note the Phase 9 caveat above).
+- `documents/roadmap.md` — plan phase par phase et livrables.
+- `documents/specifications.md` — specs techniques, interfaces, métriques.
+- `documents/rapport_analyse.md` — rapport d'analyse / résultats.
+- `data/schema.md` — schéma unifié de télémétrie et partitionnement Parquet.
+- `README.md` — quickstart utilisateur (attention à la note Phase 9 ci-dessus).
