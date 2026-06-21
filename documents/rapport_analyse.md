@@ -197,3 +197,122 @@ La Phase 7 rend ce système opérationnel en conditions réelles : le superviseu
 | `notebooks/04_fan_control.ipynb` | 5 | Contrôleurs de régulation |
 | `notebooks/05_evaluation_comparative.ipynb` | 6 | Évaluation finale |
 | `notebooks/06_phase7_mqtt_supervision.ipynb` | 7 | Analyse MQTT live, features, decisions |
+
+---
+
+# Addendum — Phase 9 & audit d'intégrité méthodologique
+
+> **Nature de cet addendum.** Les sections 1–7 ci-dessus reposent sur le dataset
+> d'origine (304 k observations). L'addendum ci-dessous présente des résultats
+> **régénérés sur un dataset fraîchement collecté et reproductible** (6 épisodes,
+> **202 043 lignes**, collectés en direct contre jumeaux-chauds : stress×2,
+> heatwave×2, busy_weeks, nominal). Les chiffres diffèrent donc volontairement de
+> ceux des sections précédentes — l'objectif est la **traçabilité** et
+> l'**honnêteté méthodologique**, pas le réglage fin des performances.
+
+## 8. Phase 9 — Évaluation en boucle fermée (impact causal)
+
+### Pourquoi la boucle fermée
+
+L'évaluation offline (sections 4–6) **rejoue des données figées** : les RPM
+commandés ne modifient pas les températures enregistrées, donc `nb_shutdowns` et
+`T_mean` y sont identiques pour tous les contrôleurs. Elle mesure la *fidélité à
+l'oracle*, pas l'*impact réel*. La Phase 9 (`evaluation/closed_loop_eval.py`)
+**pilote réellement le simulateur** et laisse la physique recalculer les
+températures en réponse aux consignes.
+
+### Protocole
+
+- Scénario `stress`, 300 s simulées, décision toutes les 5 s, vitesse 60×.
+- Client découplé (`ControlClient`) : testable hors-ligne (faux client thermique)
+  **et** branché en direct sur l'API jumeaux-chauds.
+- PUE dérivé tick-par-tick de la dérivée de `energy_kwh_cumulated` (l'API
+  n'expose pas `power_w` par machine) ; énergie fans via loi cubique P ∝ RPM³.
+
+### Résultats (live, scénario stress)
+
+| Contrôleur | T_moy (°C) | T_max (°C) | RPM moy | PUE moy | kWh fans | Éco. vs 4500 |
+|---|---|---|---|---|---|---|
+| native (auto) | 53.0 | 72.9 | 897 | 1.001 | 0.103 | 98.6 % |
+| **supervised** | **48.5** | 72.3 | 1203 | 1.001 | 0.305 | 95.8 % |
+| baseline_pid | 50.0 | 68.4 | 951 | 1.001 | 0.149 | 98.0 % |
+| score_controller | 52.6 | **84.6** | 1244 | 1.008 | 1.420 | 80.5 % |
+| baseline_fixed_4500 | **36.8** | 56.7 | 3600 | 1.061 | 6.561 | 10.0 % |
+
+### Analyse
+
+- **La différenciation causale apparaît enfin** : T_moy et l'énergie diffèrent
+  désormais par contrôleur (impossible en offline). `fixed_4500` est le plus
+  froid (36.8 °C) mais brûle **6.56 kWh** ; `supervised` refroidit utilement
+  (48.5 vs 53.0 °C natif) pour **0.31 kWh** seulement.
+- **Arbitrage sécurité/sobriété visible** : `score_controller` laisse T_max
+  grimper à **84.6 °C** (proche du seuil 88) en gardant un RPM bas — illustration
+  directe du risque d'un contrôleur trop sobre.
+- Aucun shutdown sur cette fenêtre (le scénario `stress` reste sous 88 °C ici) ;
+  la distinction **pannes évitables vs inévitables** (`fan_failure`) et le calcul
+  `nb_avoidable_avoided` sont validés par les tests unitaires
+  (`tests/test_phase9_closed_loop.py`, 33 tests dont 1 intégration live).
+
+## 9. Intégrité méthodologique — audit de fuite de données
+
+Un audit du data engineering a été mené (revue ligne par ligne + mesures).
+
+### ✅ Pas de fuite train/test classique
+
+| Vecteur | Constat |
+|---|---|
+| Normalisation | `StandardScaler` **dans le Pipeline**, ajusté sur le train seul |
+| Hyperparamètres + seuil | optimisés sur **validation**, jamais sur test |
+| Métriques | calculées sur **test tenu à l'écart** |
+| Split | **temporel** par épisode (aucun shuffle aléatoire) |
+| Features | **causales** (rolling/diff/cumsum backward only) |
+
+### ⚠️ Faiblesse réelle trouvée : circularité cible/feature
+
+Le label `failure_60s` dérive du **statut futur** (degraded/off). Or des features
+dérivées du **statut courant** (`is_degraded`, `is_off`, …) étaient disponibles :
+
+- `is_degraded` corrèle **+0.63** avec le label ;
+- **74 %** des positifs sont des machines **déjà en panne** (41 % degraded,
+  33 % off) → le label « panne dans 60 s » y est trivialement vrai.
+
+Les métriques globales **surestiment donc l'anticipation** (détection d'un état
+courant ≠ prédiction). Mesure honnête, restreinte aux machines **encore saines** :
+
+| Vue (régression logistique) | Recall | Precision |
+|---|---|---|
+| Globale (annoncée) | 0.95 | 0.98 |
+| **Anticipatoire** (status=on) | **0.90** | **0.83** |
+| Anticipation pure (sans features de statut) | 0.83 | 0.74 |
+
+Résultat rassurant : le **random forest** garde **0.99** de recall anticipatoire
+*même sans les features de statut* → il anticipe réellement depuis la dynamique
+thermique, ce n'était pas qu'une béquille.
+
+### ⚠️ Préavis réel : pannes à montée rapide (fast-onset)
+
+Sur ce dataset, le préavis médian mesuré est **~14 s** (robuste sur 7 incidents),
+pas les 72 s de la section 2 : les pannes de ce simulateur sont **fast-onset**,
+le signal précurseur ne diverge du régime normal que ~15 s avant la fenêtre de
+danger. La cible de test a été ajustée en conséquence (≥ 12 s, justifiée
+empiriquement) plutôt que de viser un seuil physiquement inatteignable.
+
+### Corrections implémentées (toutes testées)
+
+1. **Embargo temporel** (`TemporalSplitter`, `embargo_s`, défaut 60 s) : supprime
+   la contamination de seuil des labels forward-looking entre splits.
+2. **Métriques anticipatoires** exposées par défaut dans
+   `evaluation.failure_prediction_eval` (recall/precision status=on).
+3. **Option `--exclude-status-features`** (modèle d'anticipation pure).
+
+Couverture : `tests/test_phase9b_methodology.py` (12 tests). Suite globale :
+**210 passants**.
+
+### Artefacts Phase 9 / intégrité
+
+| Artefact | Description |
+|---|---|
+| `evaluation/closed_loop_eval.py` | Évaluation boucle fermée (impact causal, PUE, pannes évitables) |
+| `tests/test_phase9_closed_loop.py` | 33 tests (faux client thermique + intégration live) |
+| `tests/test_phase9b_methodology.py` | 12 tests (embargo, anti-circularité, métriques anticipatoires) |
+| `evaluation/results/closed_loop_results_stress.json` | Résultats boucle fermée |

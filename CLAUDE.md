@@ -52,8 +52,9 @@ supervisor/    Service de supervision temps réel
   online_features.py   OnlineFeatureBuffer — fenêtres glissantes par machine
   mqtt_telemetry.py    consumer de télémétrie en direct
   decision_logger.py   journal JSONL des décisions
-evaluation/    Benchmarks comparatifs hors-ligne
+evaluation/    Benchmarks comparatifs hors-ligne + boucle fermée
   benchmark.py · robustness.py · fan_control_eval.py · failure_prediction_eval.py
+  closed_loop_eval.py  Phase 9 — pilotage live de jumeaux-chauds (impact causal, PUE)
 notebooks/     Analyses Jupyter 01..06 (ingestion, features, prédiction,
                contrôle, comparaison, supervision MQTT)
 data/          datasets (ignorés par git sauf schema.md) — raw/ et processed/
@@ -62,12 +63,14 @@ tests/         suite pytest (par phase)
 *.bat          runners de workflow Windows (01..05, voir plus bas)
 ```
 
-> **Note sur le README :** `README.md` documente certains éléments de la
-> **Phase 9** (`evaluation/closed_loop_eval.py`,
-> `notebooks/07_closed_loop_evaluation.ipynb`, métriques boucle fermée) qui sont
-> **prévus mais pas encore présents** dans le code. Ne suppose pas que ces
-> fichiers existent — vérifie avant d'y faire référence. Dans le code, la roadmap
-> s'arrête actuellement à la Phase 7/8 (`tests/test_phase8_oracle.py`).
+> **État Phase 9 :** `evaluation/closed_loop_eval.py` **existe désormais**
+> (évaluation boucle fermée + `tests/test_phase9_closed_loop.py` et
+> `tests/test_phase9b_methodology.py`). En revanche
+> `notebooks/07_closed_loop_evaluation.ipynb` mentionné dans le `README.md`
+> n'existe **pas encore** — vérifie avant d'y faire référence. La prédiction de
+> panne expose maintenant des **métriques anticipatoires** (recall/precision sur
+> machines `status=on`) et un **embargo** de split (voir `failure_prediction_eval`
+> et `TemporalSplitter`), suite à l'audit d'intégrité (cf. `rapport_analyse.md`).
 
 ## Flux de données principal
 
