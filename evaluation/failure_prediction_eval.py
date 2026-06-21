@@ -150,8 +150,13 @@ def evaluate_model(
     y_test: pd.Series,
     label_col: str,
     df_test_meta: pd.DataFrame,
+    model_suffix: str = "",
 ) -> dict:
-    """Entraîne, prédit et calcule toutes les métriques pour un modèle."""
+    """Entraîne, prédit et calcule toutes les métriques pour un modèle.
+
+    `model_suffix` évite d'écraser les modèles canoniques quand on entraîne une
+    variante (ex. "_clean" pour --exclude-status-features).
+    """
     logger.info("=== Évaluation : %s ===", model_name)
 
     # -- Entraînement
@@ -177,6 +182,11 @@ def evaluate_model(
         roc_auc = roc_auc_score(y_test, y_proba)
     except ValueError:
         pr_auc = roc_auc = float("nan")
+
+    # -- Métriques anticipatoires : restreintes aux machines encore saines
+    #    (status == on). Ce sont les vraies prédictions, par opposition aux
+    #    positifs « déjà en panne » qui rendent la tâche triviale.
+    anticipatory = _anticipatory_metrics(y_test, y_pred, df_test_meta)
 
     # -- Taux de faux négatifs sur shutdowns
     fn_rate = float("nan")
@@ -205,10 +215,11 @@ def evaluate_model(
         "roc_auc":   round(roc_auc, 4) if not np.isnan(roc_auc) else None,
         "fn_rate_shutdown": round(fn_rate, 4) if not np.isnan(fn_rate) else None,
         "lead_time": lead_time,
+        "anticipatory": anticipatory,
     }
 
     # -- Sauvegarde du modèle
-    save_path = MODELS_DIR / f"{model_name}_{label_col}.joblib"
+    save_path = MODELS_DIR / f"{model_name}_{label_col}{model_suffix}.joblib"
     if hasattr(model, "save"):
         model.save(str(save_path))
     else:
@@ -232,6 +243,31 @@ def evaluate_model(
 # Affichage du tableau comparatif
 # ---------------------------------------------------------------------------
 
+def _anticipatory_metrics(y_true, y_pred, df_meta: pd.DataFrame) -> dict | None:
+    """Recall/Precision restreints aux lignes où la machine est encore saine
+    (status == on) : la vraie capacité d'anticipation, sans les positifs
+    triviaux des machines déjà dégradées/éteintes."""
+    if "is_on" in df_meta.columns:
+        mask = df_meta["is_on"].values == 1
+    elif "status" in df_meta.columns:
+        mask = df_meta["status"].values == "on"
+    else:
+        return None
+    if mask.sum() == 0:
+        return None
+    yt = np.asarray(y_true)[mask]
+    yp = np.asarray(y_pred)[mask]
+    n_pos = int((yt == 1).sum())
+    if n_pos == 0:
+        return {"recall": None, "precision": None, "n_pos": 0, "n": int(mask.sum())}
+    return {
+        "recall":    round(float(recall_score(yt, yp, zero_division=0)), 4),
+        "precision": round(float(precision_score(yt, yp, zero_division=0)), 4),
+        "n_pos":     n_pos,
+        "n":         int(mask.sum()),
+    }
+
+
 def print_comparison(results: list[dict]) -> None:
     print()
     print("=" * 90)
@@ -251,6 +287,18 @@ def print_comparison(results: list[dict]) -> None:
             f"{lt_s:>10} {det:>10}"
         )
     print("=" * 90)
+
+    # Métriques anticipatoires (machine encore saine) -- chiffre honnête
+    if any(r.get("anticipatory") for r in results):
+        print("\n  ANTICIPATION RÉELLE (status=on uniquement, hors positifs déjà en panne)")
+        print(f"  {'Modèle':<22} {'Recall':>8} {'Precision':>10} {'n_pos':>7}")
+        print("-" * 52)
+        for r in sorted(results, key=lambda x: x.get("f1", 0), reverse=True):
+            a = r.get("anticipatory")
+            if not a or a.get("recall") is None:
+                continue
+            print(f"  {r['model']:<22} {a['recall']:>8.3f} {a['precision']:>10.3f} {a['n_pos']:>7}")
+        print("=" * 90)
 
 
 # ---------------------------------------------------------------------------
@@ -284,12 +332,26 @@ def main() -> None:
         "--output", default="evaluation/results/failure_prediction_results.json",
         help="Fichier de sortie JSON",
     )
+    parser.add_argument(
+        "--embargo", type=float, default=60.0,
+        help="Embargo temporel (s) entre splits pour éviter la fuite de seuil "
+             "des labels forward-looking (défaut: 60 = horizon failure_60s)",
+    )
+    parser.add_argument(
+        "--exclude-status-features", action="store_true",
+        help="Exclure les features dérivées du statut (is_degraded, is_off, ...) "
+             "pour un modèle d'anticipation pure (évite la circularité cible/feature)",
+    )
     args = parser.parse_args()
 
-    # -- Split
+    # -- Split (avec embargo + exclusion optionnelle des features de statut)
+    from models.failure_prediction.splitter import STATUS_DERIVED_COLS
+    extra_exclude = STATUS_DERIVED_COLS if args.exclude_status_features else None
     splitter = TemporalSplitter(processed_dir=args.data)
-    X_train, X_val, X_test, y_train, y_val, y_test = splitter.split(label_col=args.label)
-    _, _, df_test_meta = splitter.split_with_meta(label_col=args.label)
+    X_train, X_val, X_test, y_train, y_val, y_test = splitter.split(
+        label_col=args.label, embargo_s=args.embargo, extra_exclude=extra_exclude,
+    )
+    _, _, df_test_meta = splitter.split_with_meta(label_col=args.label, embargo_s=args.embargo)
 
     logger.info(
         "Split — train: %d  val: %d  test: %d  features: %d",
@@ -312,6 +374,7 @@ def main() -> None:
                 X_train, X_val, X_test,
                 y_train, y_val, y_test,
                 args.label, df_test_meta,
+                model_suffix="_clean" if args.exclude_status_features else "",
             )
             results.append(result)
         except Exception as exc:

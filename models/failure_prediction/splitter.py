@@ -38,6 +38,32 @@ TRAIN_RATIO = 0.70
 VAL_RATIO   = 0.15
 # TEST_RATIO  = 0.15 (implicite)
 
+# Features dérivées du statut courant de la machine. Comme le label de panne
+# est lui-même dérivé du statut *futur*, inclure ces colonnes crée une
+# circularité cible/feature (is_degraded corrèle ~0.63 avec failure_60s) qui
+# gonfle les métriques. Les exclure (via split(extra_exclude=STATUS_DERIVED_COLS))
+# donne un modèle d'« anticipation pure ».
+STATUS_DERIVED_COLS = {
+    "is_on", "is_degraded", "is_off",
+    "time_in_degraded_s", "time_in_off_s",
+    "nb_shutdowns_episode", "nb_degraded_episode",
+    "ticks_since_last_shutdown",
+}
+
+
+def _apply_embargo(segment: pd.DataFrame, embargo_s: float) -> pd.DataFrame:
+    """Retire les `embargo_s` dernières secondes (par timestamp) d'un segment.
+
+    Empêche les labels forward-looking des dernières lignes du segment de
+    « regarder » dans le segment suivant. Gère l'entrelacement multi-machines
+    car le filtrage se fait sur le timestamp, pas sur l'indice de ligne.
+    """
+    if embargo_s <= 0 or segment.empty or "timestamp" not in segment.columns:
+        return segment
+    ts = pd.to_datetime(segment["timestamp"], utc=True, errors="coerce")
+    cutoff = ts.max() - pd.Timedelta(seconds=embargo_s)
+    return segment[ts <= cutoff]
+
 
 class TemporalSplitter:
     """Split temporel 70/15/15 par épisode, concaténation globale.
@@ -71,6 +97,8 @@ class TemporalSplitter:
         label_col: str = "failure_60s",
         episode_ids: list[str] | None = None,
         drop_na_label: bool = True,
+        embargo_s: float = 0.0,
+        extra_exclude: set[str] | None = None,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame,
                pd.Series, pd.Series, pd.Series]:
         """Charge les épisodes processed et retourne les splits (X_train, X_val, X_test,
@@ -81,6 +109,16 @@ class TemporalSplitter:
         label_col      : colonne cible ('failure_60s', 'failure_30s', 'hot_30s', 'action_class')
         episode_ids    : liste d'IDs à charger (None = tous)
         drop_na_label  : supprimer les lignes où le label est NaN
+        embargo_s      : taille de l'embargo temporel (s) retiré en *fin* des
+                         segments train et val. Les labels sont forward-looking
+                         (jusqu'à 60s) : sans embargo, les dernières lignes du
+                         train « voient » dans la val. Mettre embargo_s = horizon
+                         du label (ex. 60) supprime cette contamination de seuil.
+                         Le segment test n'est pas tronqué (reste aligné avec
+                         split_with_meta).
+        extra_exclude  : colonnes supplémentaires à exclure des features (ex.
+                         features dérivées du statut pour un modèle d'anticipation
+                         « propre »).
         """
         ep_dirs = self._list_episodes(episode_ids)
         if not ep_dirs:
@@ -111,20 +149,25 @@ class TemporalSplitter:
             n_train = int(n * self.train_ratio)
             n_val   = int(n * self.val_ratio)
 
-            trains.append(df.iloc[:n_train])
-            vals.append(df.iloc[n_train:n_train + n_val])
-            tests.append(df.iloc[n_train + n_val:])
+            train_df = _apply_embargo(df.iloc[:n_train], embargo_s)
+            val_df   = _apply_embargo(df.iloc[n_train:n_train + n_val], embargo_s)
+            test_df  = df.iloc[n_train + n_val:]
 
-            pos_train = (df.iloc[:n_train][label_col] == 1).sum()
-            pos_test  = (df.iloc[n_train + n_val:][label_col] == 1).sum()
+            trains.append(train_df)
+            vals.append(val_df)
+            tests.append(test_df)
+
+            pos_train = (train_df[label_col] == 1).sum()
+            pos_test  = (test_df[label_col] == 1).sum()
             logger.info(
                 "Episode %s : %d lignes → train=%d (pos=%.1f%%)  "
-                "val=%d  test=%d (pos=%.1f%%)",
-                ep_id, n, n_train,
-                100 * pos_train / max(n_train, 1),
-                n_val,
-                n - n_train - n_val,
-                100 * pos_test / max(n - n_train - n_val, 1),
+                "val=%d  test=%d (pos=%.1f%%)  embargo=%.0fs",
+                ep_id, n, len(train_df),
+                100 * pos_train / max(len(train_df), 1),
+                len(val_df),
+                len(test_df),
+                100 * pos_test / max(len(test_df), 1),
+                embargo_s,
             )
 
         if not trains:
@@ -135,10 +178,11 @@ class TemporalSplitter:
         df_test  = pd.concat(tests,  ignore_index=True)
 
         # Déterminer les colonnes features
+        exclude = NON_FEATURE_COLS | (extra_exclude or set())
         all_cols = set(df_train.columns)
         self._feature_cols = sorted(
             c for c in all_cols
-            if c not in NON_FEATURE_COLS
+            if c not in exclude
             and df_train[c].dtype in [np.float64, np.float32, np.int64, np.int32, bool]
         )
 
@@ -160,9 +204,14 @@ class TemporalSplitter:
         self,
         label_col: str = "failure_60s",
         episode_ids: list[str] | None = None,
+        embargo_s: float = 0.0,
     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         """Comme split() mais retourne les DataFrames complets (avec metadata)
-        pour le calcul du lead time et l'analyse post-hoc."""
+        pour le calcul du lead time et l'analyse post-hoc.
+
+        `embargo_s` doit valoir la même valeur que dans split() pour que le jeu
+        de test (non tronqué) reste aligné avec les prédictions du modèle.
+        """
         ep_dirs = self._list_episodes(episode_ids)
         trains, vals, tests = [], [], []
 
@@ -176,8 +225,8 @@ class TemporalSplitter:
             n = len(df)
             n_train = int(n * self.train_ratio)
             n_val   = int(n * self.val_ratio)
-            trains.append(df.iloc[:n_train])
-            vals.append(df.iloc[n_train:n_train + n_val])
+            trains.append(_apply_embargo(df.iloc[:n_train], embargo_s))
+            vals.append(_apply_embargo(df.iloc[n_train:n_train + n_val], embargo_s))
             tests.append(df.iloc[n_train + n_val:])
 
         return (
