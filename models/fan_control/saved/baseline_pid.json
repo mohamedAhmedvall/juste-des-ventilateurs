@@ -1,0 +1,16 @@
+{
+  "kp": 120.0,
+  "ki": 0.5,
+  "kd": 5.0,
+  "pid_target_ratio": 0.8,
+  "t_shutdown": 88.0,
+  "rpm_min": 800,
+  "rpm_max": 4500,
+  "integral_clip": 1000.0,
+  "best_params": {
+    "kp": 120.0,
+    "ki": 0.5,
+    "kd": 5.0,
+    "score": -0.31319888888888886
+  }
+}

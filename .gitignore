@@ -221,20 +221,22 @@ __marimo__/
 .jupyter/
 
 # Données collectées (volumineuses, reproductibles via seed)
-data/raw/
-data/processed/
-data/*.parquet
-data/*.csv
+# -- versionnées sur demande explicite (snapshot d'épisodes) --
+# data/raw/
+# data/processed/
+# data/*.parquet
+# data/*.csv
 
 # Modèles entraînés (sérialisés)
-models/failure_prediction/saved/
-models/fan_control/saved/
-*.pkl
-*.joblib
+# -- versionnés sur demande explicite --
+# models/failure_prediction/saved/
+# models/fan_control/saved/
+# *.pkl
+# *.joblib
 *.onnx
 
 # Logs et résultats d'évaluation
-evaluation/results/
+# evaluation/results/   -- versionnés sur demande explicite
 supervisor/logs/
 *.log
 
