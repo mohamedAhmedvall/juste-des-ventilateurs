@@ -515,12 +515,13 @@ def build_controller(name: str):
     if name == "baseline_pid":
         return "control", PIDController(), None
     if name.startswith("baseline_fixed"):
-        # ex : baseline_fixed_4500
+        # ex : baseline_fixed_4500 / baseline_fixed_0
+        from models.fan_control.baseline_fixed import RPM_LEVELS as FIXED_LEVELS
         rpm = 2500
         parts = name.split("_")
         if parts[-1].isdigit():
-            rpm = int(parts[-1])
-            rpm = min(RPM_LEVELS, key=lambda x: abs(x - rpm))
+            # snap aux niveaux VALIDES de FixedController (≠ RPM_LEVELS boucle fermée)
+            rpm = min(FIXED_LEVELS, key=lambda x: abs(x - int(parts[-1])))
         return "control", FixedController(rpm=rpm), None
 
     # Contrôleurs ML : chargement best-effort

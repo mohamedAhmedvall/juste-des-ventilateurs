@@ -251,7 +251,35 @@ températures en réponse aux consignes.
 - Aucun shutdown sur cette fenêtre (le scénario `stress` reste sous 88 °C ici) ;
   la distinction **pannes évitables vs inévitables** (`fan_failure`) et le calcul
   `nb_avoidable_avoided` sont validés par les tests unitaires
-  (`tests/test_phase9_closed_loop.py`, 33 tests dont 1 intégration live).
+  (`tests/test_phase9_closed_loop.py`, 35 tests dont 1 intégration live).
+
+### Démonstration causale : pannes évitées (heatwave, sims fraîches)
+
+Pour répondre directement à la question du sujet — *« combien de shutdowns
+évités ? »* — chaque contrôleur est exécuté sur une **simulation fraîche**
+(processus relancé, mêmes conditions initiales) du scénario `heatwave`, qui fait
+monter la température progressivement jusqu'au seuil de shutdown (88 °C).
+
+| Politique | Arrêts | Évités vs sans-refroidissement | T_max (°C) | kWh fans |
+|---|---|---|---|---|
+| `fixed_0` (aucun refroidissement) | **4** | — (référence pire cas) | 87.9 | 0.9 |
+| native (auto natif) | 0 | **4** | 86.3 (au bord) | 1.4 |
+| **supervised (ML)** | **0** | **4** | **72.0** | **0.34** |
+| `fixed_4500` (plein régime) | 0 | 4 | 57.9 | 157.5 |
+
+**Lecture.** Sans refroidissement, **4 pannes thermiques évitables** surviennent.
+Les trois autres politiques les **évitent toutes les 4** — c'est la preuve que le
+contrôle a un **impact causal** mesurable (impossible à voir en offline). Le
+contrôleur **supervisé (ML)** est le meilleur compromis : il maintient **16 °C de
+marge** au seuil tout en consommant **moins d'énergie que le natif** (0.34 vs
+1.37 kWh) et ~460× moins que le plein régime (157 kWh). Le natif, lui, survit de
+justesse (86.3 °C, 1.7 °C de marge). C'est la démonstration concrète de la valeur
+ajoutée : **sécurité thermique ET sobriété énergétique simultanées**.
+
+> Réserve méthodologique : `soft_reset` ne remet pas les températures machines à
+> l'identique entre contrôleurs ; l'équité est ici obtenue en **relançant le
+> simulateur** pour chaque politique (sim fraîche). Une Phase 9bis pourrait
+> intégrer ce reset complet directement dans `ClosedLoopRunner`.
 
 ## 9. Intégrité méthodologique — audit de fuite de données
 

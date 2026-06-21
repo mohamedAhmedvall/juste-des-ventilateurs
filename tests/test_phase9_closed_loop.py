@@ -399,6 +399,17 @@ class TestBuildController:
         mode, ctrl, _ = build_controller("does_not_exist")
         assert mode == "control" and ctrl is not None  # repli baseline_pid
 
+    def test_fixed_snaps_to_valid_levels(self):
+        """baseline_fixed_<n> doit snapper aux niveaux VALIDES de FixedController."""
+        from models.fan_control.baseline_fixed import RPM_LEVELS as FIXED_LEVELS
+        for name in ("baseline_fixed_0", "baseline_fixed_800", "baseline_fixed_4500"):
+            _, ctrl, _ = build_controller(name)   # ne doit pas lever (bug rpm=800)
+            assert ctrl.rpm in FIXED_LEVELS
+
+    def test_fixed_zero_is_weakest(self):
+        _, ctrl, _ = build_controller("baseline_fixed_0")
+        assert ctrl.rpm == 0
+
 
 # ===========================================================================
 # Intégration live (jumeaux-chauds réel) — marquée slow
