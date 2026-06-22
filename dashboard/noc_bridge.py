@@ -70,6 +70,7 @@ def build_live(cluster: dict, buffer, predictor, feature_order) -> dict:
             "load": round(float(snap.get("load_estimated", feats.get("load_estimated", 0.0))), 3),
             "on":   status == "on",
             "status": status,
+            "role": str(snap.get("role", "worker")),
             "fans": rpms,
             "risk": risk,
         }
@@ -77,6 +78,7 @@ def build_live(cluster: dict, buffer, predictor, feature_order) -> dict:
     return {
         "source": cluster.get("cluster_id", "jumeaux-chauds"),
         "ts": cluster.get("ts"),
+        "metrics": cluster.get("metrics", {}),
         "byId": by_id,
     }
 
@@ -95,24 +97,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._live()
         elif self.path in ("/", "/index.html", "/noc.html"):
             self._html()
-        elif self.path.startswith("/vendor/"):
-            self._vendor()
         else:
             self.send_error(404)
-
-    def _vendor(self):
-        # sert dashboard/vendor/* (React/ReactDOM/Babel inlinés localement)
-        name = Path(self.path.split("?", 1)[0]).name
-        fpath = NOC_HTML.parent / "vendor" / name
-        if not fpath.exists() or fpath.suffix != ".js":
-            self.send_error(404)
-            return
-        body = fpath.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/javascript")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
 
     def _html(self):
         if not NOC_HTML.exists():
