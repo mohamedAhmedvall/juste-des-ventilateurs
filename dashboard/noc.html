@@ -61,19 +61,22 @@
     padding:2px 8px;border-radius:6px;margin-left:9px;background:rgba(34,211,238,.06)}
   .st{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;letter-spacing:.5px}
   .st .d{width:8px;height:8px;border-radius:50%}
-  /* haut de carte : chassis + fans + jauge */
+  /* unité serveur rackmount (front réaliste) */
   .top{display:flex;align-items:center;gap:14px}
-  .chassis{flex:0 0 132px}
-  .rack{width:132px;height:74px;border-radius:9px;border:1px solid var(--bd);
-    background:linear-gradient(180deg,#0a1322,#070d18);position:relative;display:flex;align-items:center;justify-content:space-around;overflow:hidden}
-  .rack .leds{position:absolute;left:7px;top:7px;display:flex;flex-direction:column;gap:4px}
-  .rack .leds i{width:5px;height:5px;border-radius:50%;background:#1c2942}
-  .rack .leds i.on{background:var(--grn);box-shadow:0 0 6px var(--grn)}
-  .rack .leds i.warn{background:var(--amb);box-shadow:0 0 6px var(--amb)}
-  .fan{width:46px;height:46px}
-  .fan .blades{transform-origin:50% 50%;animation:spin 2s linear infinite}
+  .unit{position:relative;margin-bottom:13px;border-radius:9px;overflow:hidden}
+  .unit svg{display:block;width:100%;height:auto}
+  .ulabel{position:absolute;left:30px;top:8px;font:700 9px ui-monospace,monospace;color:#8fd0ec;letter-spacing:1.5px}
+  .urpm{position:absolute;right:30px;top:8px;font:700 10px ui-monospace,monospace;color:#9fe3ff}
+  .uheat{position:absolute;inset:0;pointer-events:none;transition:background .7s;mix-blend-mode:screen}
+  .blades{transform-box:fill-box;transform-origin:center;animation:spin 2s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .fan.dead .blades{animation:none;opacity:.3}
+  .blades.dead{animation:none;opacity:.22}
+  /* cadre rack autour du cluster */
+  .rackbar{display:flex;align-items:center;gap:12px;margin:0 0 14px;padding:9px 15px;border:1px solid var(--bd);
+    border-radius:12px;background:linear-gradient(90deg,rgba(34,211,238,.06),transparent);backdrop-filter:blur(6px)}
+  .rackbar .tag{font:700 11px ui-monospace,monospace;letter-spacing:1.2px;color:#9fe3ff;
+    border:1px solid rgba(34,211,238,.3);border-radius:6px;padding:3px 9px;background:rgba(34,211,238,.06)}
+  .rackbar .meta{color:var(--mut);font-size:12px;letter-spacing:.4px}
   .gw{flex:0 0 auto;position:relative}
   .gw .lbl{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center}
   .gw .lbl b{display:block;font-size:21px;font-weight:800;line-height:1}
@@ -141,6 +144,10 @@
     <div class="kpi"><div class="k">Co&ucirc;t estim&eacute;</div><div class="v mono" id="kpi-cost">&mdash;</div></div>
   </div>
 
+  <div class="rackbar">
+    <span class="tag">&#9638; RACK A</span>
+    <span class="meta" id="rackmeta">cluster_alpha</span>
+  </div>
   <div class="grid" id="grid"></div>
 
   <footer>Source&nbsp;: <b id="src">simulation locale</b> &middot; risque &amp; explicabilit&eacute; : r&eacute;gression logistique
@@ -154,13 +161,43 @@ function riskColor(r){return r>=70?'#fb6a78':r>=40?'#fbbf24':r>=15?'#22d3ee':'#3
 function statusColor(s){return s==='on'?'#34d399':s==='degraded'?'#fbbf24':'#6b80a3';}
 function esc(s){return String(s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
 
-function fanSVG(){
-  return '<svg class="fan" viewBox="0 0 100 100"><g class="blades">'
-    +'<circle cx="50" cy="50" r="9" fill="#22d3ee"/>'
-    +[0,60,120,180,240,300].map(function(a){
-        return '<path transform="rotate('+a+' 50 50)" d="M50 50 C58 30 72 26 80 30 C70 40 62 46 50 50 Z" '
-          +'fill="rgba(34,211,238,.55)" stroke="rgba(34,211,238,.8)" stroke-width="1"/>';}).join('')
-    +'</g></svg>';
+function serverSVG(){
+  // baies de disques
+  var bays='';
+  for(var i=0;i<7;i++){ var x=150+i*28;
+    bays+='<rect x="'+x+'" y="28" width="22" height="40" rx="3" fill="#0c1626" stroke="#22324c"/>'
+        +'<rect x="'+(x+3)+'" y="31" width="3" height="34" rx="1.5" fill="#16314a"/>'
+        +'<circle cx="'+(x+16)+'" cy="62" r="1.6" fill="#34d399"/>'; }
+  // grille de ventilation perforée
+  var vent='';
+  for(var r=0;r<4;r++)for(var c2=0;c2<8;c2++){ vent+='<circle cx="'+(352+c2*7)+'" cy="'+(26+r*12)+'" r="2.1" fill="#0a1422" stroke="#1a2740" stroke-width=".5"/>'; }
+  // mur de ventilateurs (3) animés
+  function fan(cx,idx){
+    var bl='';
+    for(var a=0;a<6;a++) bl+='<path transform="rotate('+(a*60)+')" d="M0 0 C5 -13 14 -16 18 -12 C11 -6 5 -2 0 0 Z" '
+      +'fill="rgba(34,211,238,.5)" stroke="rgba(34,211,238,.85)" stroke-width="1"/>';
+    return '<g transform="translate('+cx+',48)"><circle r="20" fill="#0a1422" stroke="#22324c"/>'
+      +'<circle r="20" fill="none" stroke="#11324a" stroke-width="1"/>'
+      +'<g class="cf'+idx+' blades"><circle r="4.5" fill="#22d3ee"/>'+bl+'</g></g>';
+  }
+  return '<svg viewBox="0 0 600 96" preserveAspectRatio="none" style="height:94px">'
+    +'<defs><linearGradient id="ch" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#132035"/><stop offset="1" stop-color="#0a1322"/></linearGradient></defs>'
+    +'<rect x="1" y="1" width="598" height="94" rx="9" fill="url(#ch)" stroke="#283c5a"/>'
+    // oreilles de rack + vis
+    +'<rect x="1" y="1" width="22" height="94" fill="#0c1626" stroke="#283c5a"/>'
+    +'<rect x="577" y="1" width="22" height="94" fill="#0c1626" stroke="#283c5a"/>'
+    +'<circle cx="12" cy="16" r="3.6" fill="#1a2740" stroke="#33486a"/><circle cx="12" cy="80" r="3.6" fill="#1a2740" stroke="#33486a"/>'
+    +'<circle cx="588" cy="16" r="3.6" fill="#1a2740" stroke="#33486a"/><circle cx="588" cy="80" r="3.6" fill="#1a2740" stroke="#33486a"/>'
+    // colonne de LED d\'état
+    +'<circle cx="38" cy="24" r="3.6" fill="#34d399"/><circle cx="38" cy="40" r="3.6" fill="#22d3ee"/>'
+    +'<circle cx="38" cy="56" r="3" fill="#1e2c44"/><circle cx="38" cy="72" r="3" fill="#1e2c44"/>'
+    // bloc alimentation
+    +'<rect x="54" y="18" width="78" height="60" rx="6" fill="#0c1626" stroke="#22324c"/>'
+    +'<circle cx="78" cy="42" r="12" fill="none" stroke="#34d399" stroke-width="2.5"/><rect x="76.5" y="31" width="3" height="13" rx="1" fill="#34d399"/>'
+    +'<text x="93" y="46" font-size="11" font-family="ui-monospace,monospace" fill="#5f7da0">PSU</text>'
+    +'<text x="78" y="70" text-anchor="middle" font-size="8.5" font-family="ui-monospace,monospace" fill="#4a6385">POWER</text>'
+    + bays + vent + fan(458,0) + fan(508,1) + fan(556,2)
+    +'</svg>';
 }
 function ring(){
   return '<svg width="92" height="92" viewBox="0 0 92 92">'
@@ -173,11 +210,8 @@ function skeleton(id){
   return '<div class="card" data-card="'+esc(id)+'">'
    +'<div class="chead"><div><span class="mid">'+esc(id)+'</span><span class="pill role"></span></div>'
    +'<div class="st"><span class="d"></span><span class="sttxt"></span></div></div>'
+   +'<div class="unit"><span class="ulabel"></span><span class="urpm mono"></span>'+serverSVG()+'<div class="uheat"></div></div>'
    +'<div class="top">'
-     +'<div class="chassis"><div class="rack"><div class="leds"><i></i><i></i><i></i></div>'
-        +'<span class="fanwrap f0">'+fanSVG()+'</span><span class="fanwrap f1">'+fanSVG()+'</span></div>'
-        +'<div class="mrow" style="margin-top:7px"><span class="lab">Ventilateurs</span><span class="val mono fanrpm"></span></div>'
-     +'</div>'
      +'<div class="gw">'+ring()+'<div class="lbl"><b class="riskv mono">0</b><span>RISQUE&nbsp;ML</span></div></div>'
      +'<div class="mcol">'
        +'<div class="mrow"><span class="lab">Temp&eacute;rature</span><span class="val mono tempv"></span></div><div class="bar"><i class="tempbar"></i></div>'
@@ -208,21 +242,20 @@ function update(id,m){
   c.querySelector('.sttxt').textContent=(m.status||'?').toUpperCase();
   c.querySelector('.sttxt').parentNode.style.color=statusColor(m.status);
   c.querySelector('.st .d').style.background=statusColor(m.status);
-  // leds
-  var leds=c.querySelectorAll('.leds i');
-  leds.forEach(function(l,i){ l.className=!m.on?'':(warn&&i===0?'warn':'on'); });
-  // fans
+  // unité serveur : ventilateurs + RPM + étiquette + surchauffe
   var rpm=(m.fans&&m.fans.length)?(m.fans.reduce(function(a,b){return a+b;},0)/m.fans.length):0;
-  c.querySelector('.fanrpm').textContent=Math.round(rpm)+' RPM';
+  c.querySelector('.urpm').textContent=Math.round(rpm)+' RPM';
+  c.querySelector('.ulabel').textContent=(m.role==='master'?'2U':'1U')+' · '+id;
   var lvl=[800,1500,2500,3500,4500].reduce(function(p,v){return Math.abs(v-rpm)<Math.abs(p-rpm)?v:p;},800);
-  c.querySelectorAll('.ctrl button[data-rpm]').forEach(function(btn){ btn.classList.toggle('sel', m.on && (+btn.dataset.rpm)===lvl); });
-  [0,1].forEach(function(k){
-    var fw=c.querySelector('.f'+k+' .fan'), r=(m.fans&&m.fans[k]!=null)?m.fans[k]:rpm;
-    if(!fw) return;
-    if(r>50){ fw.classList.remove('dead'); var dur=Math.max(0.25,Math.min(4,1800/r));
-      fw.querySelector('.blades').style.animationDuration=dur.toFixed(2)+'s'; }
-    else fw.classList.add('dead');
+  c.querySelectorAll('.ctrl button[data-rpm]').forEach(function(btn){ btn.classList.toggle('sel', m.on && (+btn.getAttribute('data-rpm'))===lvl); });
+  [0,1,2].forEach(function(k){
+    var g=c.querySelector('.cf'+k); if(!g) return;
+    if(rpm>50 && m.on){ g.classList.remove('dead'); g.style.animationDuration=Math.max(0.25,Math.min(4,1800/rpm)).toFixed(2)+'s'; }
+    else g.classList.add('dead');
   });
+  var he=c.querySelector('.uheat');
+  he.style.background = m.temp>=tShut*0.95 ? 'radial-gradient(120% 80% at 50% 120%,rgba(251,106,120,.5),transparent 62%)'
+     : m.temp>=tShut*0.82 ? 'radial-gradient(120% 80% at 50% 120%,rgba(251,191,36,.32),transparent 62%)' : 'none';
   // risque ring
   var col=riskColor(risk==null?0:risk), pct=Math.max(0,Math.min(100,risk==null?0:risk));
   var arc=c.querySelector('.arc'); arc.setAttribute('stroke',col); arc.setAttribute('stroke-dashoffset',(226*(1-pct/100)).toFixed(1));
@@ -266,6 +299,7 @@ function render(data,live){
   document.getElementById('kpi-risk').innerHTML  =risks.length?('<span style="color:'+riskColor(Math.max.apply(null,risks))+'">'+Math.round(Math.max.apply(null,risks))+'%</span>'):'—';
   document.getElementById('kpi-on').innerHTML    =on+' <small>/ '+ids.length+'</small>';
   document.getElementById('kpi-cost').innerHTML  =M.cost_eur_total!=null?(M.cost_eur_total.toFixed(2)+' <small>€</small>'):'—';
+  document.getElementById('rackmeta').textContent=(data.source||'cluster')+' · '+ids.length+' unités · '+on+' actives · '+(live?'télémétrie temps réel':'démo');
   ensure(ids); ids.forEach(function(i){ update(i,data.byId[i]); });
   setAuto(!!data.autopilot);
 }
