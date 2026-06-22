@@ -3,60 +3,104 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NOC — Juste des Ventilateurs</title>
+<title>NOC · Juste des Ventilateurs</title>
 <style>
   :root{
-    --bg:#080b12; --panel:#0e1422; --panel2:#111a2c; --bd:#1e293b;
-    --tx:#e2e8f0; --mut:#64748b; --cyan:#22d3ee; --grn:#34d399;
-    --amb:#fbbf24; --red:#f87171; --pur:#a78bfa;
+    --bg:#04070e; --panel:rgba(13,21,38,.72); --bd:rgba(56,96,160,.28);
+    --tx:#dbe7ff; --mut:#6b80a3;
+    --cyan:#22d3ee; --grn:#34d399; --amb:#fbbf24; --red:#fb6a78; --pur:#a78bfa; --mag:#f472b6;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#0f1b2e 0%,var(--bg) 60%);
-    color:var(--tx);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh}
-  .wrap{max-width:1640px;margin:0 auto;padding:18px 22px 40px}
-  header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+  html,body{margin:0;min-height:100%}
+  body{
+    background:
+      radial-gradient(900px 500px at 78% -8%, rgba(34,211,238,.10), transparent 60%),
+      radial-gradient(800px 500px at 12% 8%, rgba(167,139,250,.10), transparent 55%),
+      linear-gradient(180deg,#060a14,#04070e);
+    color:var(--tx);font:14px/1.45 ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif;}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background-image:linear-gradient(rgba(80,140,220,.05) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(80,140,220,.05) 1px,transparent 1px);
+    background-size:46px 46px;mask:radial-gradient(circle at 50% 30%,#000,transparent 90%)}
+  .wrap{position:relative;z-index:1;max-width:1660px;margin:0 auto;padding:20px 24px 48px}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
   .brand{display:flex;align-items:center;gap:14px}
-  .logo{width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,var(--cyan),var(--pur));
-    display:grid;place-items:center;font-size:22px;box-shadow:0 0 24px rgba(34,211,238,.35)}
-  .brand h1{font-size:17px;margin:0;letter-spacing:.4px}
-  .brand p{margin:2px 0 0;color:var(--mut);font-size:12px}
-  .badge{display:flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;font-weight:600;font-size:12px;
-    border:1px solid var(--bd)}
-  .badge .dot{width:9px;height:9px;border-radius:50%;animation:pulse 1.6s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-  .live{background:rgba(52,211,153,.12);color:var(--grn)} .live .dot{background:var(--grn);box-shadow:0 0 10px var(--grn)}
-  .sim{background:rgba(100,116,139,.15);color:var(--mut)} .sim .dot{background:var(--mut)}
-  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px}
-  .kpi{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--bd);border-radius:14px;padding:14px 16px}
-  .kpi .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.7px}
-  .kpi .v{font-size:26px;font-weight:700;margin-top:6px}
-  .kpi .v small{font-size:13px;color:var(--mut);font-weight:500}
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--bd);border-radius:16px;
-    padding:16px;position:relative;overflow:hidden}
-  .card.crit{border-color:rgba(248,113,113,.5);box-shadow:0 0 0 1px rgba(248,113,113,.25),0 0 26px rgba(248,113,113,.12)}
-  .card.off{opacity:.62}
-  .chead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-  .mid{font-weight:700;font-size:15px;letter-spacing:.3px}
-  .pill{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);border:1px solid var(--bd);
-    padding:2px 7px;border-radius:6px;margin-left:8px}
-  .st{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600}
+  .logo{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,var(--cyan),var(--pur));
+    display:grid;place-items:center;font-size:23px;box-shadow:0 0 30px rgba(34,211,238,.45),inset 0 0 12px rgba(255,255,255,.25)}
+  .brand h1{font-size:18px;margin:0;letter-spacing:1.2px;font-weight:800;
+    background:linear-gradient(90deg,#fff,#9fdcff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .brand p{margin:3px 0 0;color:var(--mut);font-size:12px;letter-spacing:.5px}
+  .badge{display:flex;align-items:center;gap:9px;padding:8px 16px;border-radius:999px;font-weight:700;font-size:12px;
+    letter-spacing:.6px;border:1px solid var(--bd);backdrop-filter:blur(8px)}
+  .badge .dot{width:9px;height:9px;border-radius:50%;animation:pulse 1.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+  .live{background:rgba(52,211,153,.12);color:var(--grn);box-shadow:0 0 22px rgba(52,211,153,.18)}
+  .live .dot{background:var(--grn);box-shadow:0 0 12px var(--grn)}
+  .sim{background:rgba(107,128,163,.14);color:var(--mut)} .sim .dot{background:var(--mut)}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:22px}
+  .kpi{background:var(--panel);border:1px solid var(--bd);border-radius:16px;padding:15px 17px;
+    backdrop-filter:blur(10px);position:relative;overflow:hidden}
+  .kpi::after{content:"";position:absolute;left:0;top:0;height:2px;width:100%;
+    background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:.5}
+  .kpi .k{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:1.1px}
+  .kpi .v{font-size:27px;font-weight:800;margin-top:7px}
+  .kpi .v small{font-size:13px;color:var(--mut);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px}
+  .card{background:var(--panel);border:1px solid var(--bd);border-radius:18px;padding:16px 17px;
+    backdrop-filter:blur(10px);position:relative;overflow:hidden;transition:box-shadow .4s,border-color .4s}
+  .card::before{content:"";position:absolute;inset:0;border-radius:18px;padding:1px;pointer-events:none;
+    background:linear-gradient(160deg,rgba(34,211,238,.25),transparent 40%);
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+  .card.crit{border-color:rgba(251,106,120,.6);box-shadow:0 0 30px rgba(251,106,120,.18)}
+  .card.warn{border-color:rgba(251,191,36,.45)}
+  .card.off{opacity:.55}
+  .chead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .mid{font-weight:800;font-size:15px;letter-spacing:.4px}
+  .pill{font-size:9.5px;text-transform:uppercase;letter-spacing:.7px;color:#8fe3ff;border:1px solid rgba(34,211,238,.3);
+    padding:2px 8px;border-radius:6px;margin-left:9px;background:rgba(34,211,238,.06)}
+  .st{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700;letter-spacing:.5px}
   .st .d{width:8px;height:8px;border-radius:50%}
-  .row{display:flex;align-items:center;gap:14px}
-  .gauge{flex:0 0 auto}
-  .metrics{flex:1;min-width:0}
-  .mrow{display:flex;justify-content:space-between;align-items:center;margin:7px 0;font-size:12px}
-  .mrow .lab{color:var(--mut)}
-  .mrow .val{font-weight:600}
-  .bar{height:7px;border-radius:4px;background:#1c2638;overflow:hidden;margin-top:4px}
-  .bar > i{display:block;height:100%;border-radius:4px}
-  .fans{display:flex;gap:10px;margin-top:12px}
-  .fan{flex:1;background:#0c1220;border:1px solid var(--bd);border-radius:9px;padding:8px;text-align:center}
-  .fan .fr{font-weight:700;font-size:15px} .fan .fl{color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:.5px}
-  .spin{display:inline-block;width:13px;height:13px;border:2px solid var(--cyan);border-top-color:transparent;
-    border-radius:50%;animation:rot .9s linear infinite;vertical-align:-2px;margin-right:5px}
-  @keyframes rot{to{transform:rotate(360deg)}}
-  footer{margin-top:22px;color:var(--mut);font-size:12px;text-align:center}
+  /* haut de carte : chassis + fans + jauge */
+  .top{display:flex;align-items:center;gap:14px}
+  .chassis{flex:0 0 132px}
+  .rack{width:132px;height:74px;border-radius:9px;border:1px solid var(--bd);
+    background:linear-gradient(180deg,#0a1322,#070d18);position:relative;display:flex;align-items:center;justify-content:space-around;overflow:hidden}
+  .rack .leds{position:absolute;left:7px;top:7px;display:flex;flex-direction:column;gap:4px}
+  .rack .leds i{width:5px;height:5px;border-radius:50%;background:#1c2942}
+  .rack .leds i.on{background:var(--grn);box-shadow:0 0 6px var(--grn)}
+  .rack .leds i.warn{background:var(--amb);box-shadow:0 0 6px var(--amb)}
+  .fan{width:46px;height:46px}
+  .fan .blades{transform-origin:50% 50%;animation:spin 2s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .fan.dead .blades{animation:none;opacity:.3}
+  .gw{flex:0 0 auto;position:relative}
+  .gw .lbl{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center}
+  .gw .lbl b{display:block;font-size:21px;font-weight:800;line-height:1}
+  .gw .lbl span{font-size:8.5px;color:var(--mut);letter-spacing:.8px}
+  .mid-row{display:flex;gap:14px;margin-top:13px}
+  .mcol{flex:1;min-width:0}
+  .mrow{display:flex;justify-content:space-between;align-items:baseline;margin:6px 0 3px;font-size:11.5px}
+  .mrow .lab{color:var(--mut)} .mrow .val{font-weight:700}
+  .bar{height:7px;border-radius:5px;background:#16223a;overflow:hidden}
+  .bar > i{display:block;height:100%;border-radius:5px;transition:width .6s,background .6s}
+  /* pilotage */
+  .reco{margin-top:6px;display:flex;align-items:center;justify-content:space-between;
+    background:linear-gradient(90deg,rgba(167,139,250,.12),rgba(34,211,238,.05));border:1px solid rgba(167,139,250,.3);
+    border-radius:10px;padding:8px 11px}
+  .reco .t{font-size:10px;color:#c9b8ff;text-transform:uppercase;letter-spacing:.7px}
+  .reco .r{font-size:17px;font-weight:800;color:#d6c8ff}
+  .reco .r small{font-size:11px;color:var(--mut);font-weight:600}
+  /* explicabilité */
+  .xai{margin-top:13px;border-top:1px dashed var(--bd);padding-top:11px}
+  .xai .h{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;justify-content:space-between}
+  .xrow{display:grid;grid-template-columns:118px 1fr 46px;align-items:center;gap:8px;margin:4px 0;font-size:11px}
+  .xrow .xf{color:#aebfdb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .xbar{height:9px;background:#0d1830;border-radius:5px;position:relative}
+  .xbar .mid0{position:absolute;left:50%;top:-1px;bottom:-1px;width:1px;background:rgba(140,160,200,.3)}
+  .xbar i{position:absolute;top:0;bottom:0;border-radius:4px}
+  .xrow .xv{text-align:right;color:var(--mut)}
+  footer{margin-top:24px;color:var(--mut);font-size:11.5px;text-align:center;letter-spacing:.3px}
   footer b{color:var(--cyan)}
 </style>
 </head>
@@ -66,106 +110,168 @@
     <div class="brand">
       <div class="logo">&#10052;</div>
       <div>
-        <h1>JUSTE DES VENTILATEURS &mdash; NOC</h1>
-        <p>Supervision thermique &middot; <span id="cluster">cluster_alpha</span></p>
+        <h1>JUSTE DES VENTILATEURS&nbsp;&middot;&nbsp;NOC</h1>
+        <p>Poste de pilotage thermique &mdash; <span id="cluster" class="mono">cluster_alpha</span></p>
       </div>
     </div>
     <div id="badge" class="badge sim"><span class="dot"></span><span id="badgetxt">SIM (hors-ligne)</span></div>
   </header>
 
   <div class="kpis">
-    <div class="kpi"><div class="k">PUE moyen</div><div class="v" id="kpi-pue">&mdash;</div></div>
-    <div class="kpi"><div class="k">&Eacute;nergie cluster</div><div class="v" id="kpi-energy">&mdash;</div></div>
-    <div class="kpi"><div class="k">Risque max</div><div class="v" id="kpi-risk">&mdash;</div></div>
-    <div class="kpi"><div class="k">Machines actives</div><div class="v" id="kpi-on">&mdash;</div></div>
-    <div class="kpi"><div class="k">Co&ucirc;t estim&eacute;</div><div class="v" id="kpi-cost">&mdash;</div></div>
+    <div class="kpi"><div class="k">PUE moyen</div><div class="v mono" id="kpi-pue">&mdash;</div></div>
+    <div class="kpi"><div class="k">&Eacute;nergie cluster</div><div class="v mono" id="kpi-energy">&mdash;</div></div>
+    <div class="kpi"><div class="k">Risque ML max</div><div class="v mono" id="kpi-risk">&mdash;</div></div>
+    <div class="kpi"><div class="k">Machines actives</div><div class="v mono" id="kpi-on">&mdash;</div></div>
+    <div class="kpi"><div class="k">Co&ucirc;t estim&eacute;</div><div class="v mono" id="kpi-cost">&mdash;</div></div>
   </div>
 
   <div class="grid" id="grid"></div>
 
-  <footer>Source : <b id="src">simulation locale</b> &middot; risque calcul&eacute; par le pr&eacute;dicteur ML (r&eacute;gression logistique) &middot;
-    seuil d'arr&ecirc;t thermique 88&ndash;92&nbsp;&deg;C &middot; rafra&icirc;chissement 2&nbsp;s</footer>
+  <footer>Source&nbsp;: <b id="src">simulation locale</b> &middot; risque &amp; explicabilit&eacute; : r&eacute;gression logistique
+    (contribution = coefficient &times; feature standardis&eacute;e) &middot; consigne&nbsp;: contr&ocirc;leur supervis&eacute; &middot; seuil 88&ndash;92&nbsp;&deg;C</footer>
 </div>
 
 <script>
 "use strict";
-const TSHUT = {master:90, worker:88};
+var TSHUT={master:90,worker:88}, MAXRPM=5000;
+function riskColor(r){return r>=70?'#fb6a78':r>=40?'#fbbf24':r>=15?'#22d3ee':'#34d399';}
+function statusColor(s){return s==='on'?'#34d399':s==='degraded'?'#fbbf24':'#6b80a3';}
+function esc(s){return String(s).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
 
-function riskColor(r){ return r>=70?'#f87171': r>=40?'#fbbf24': r>=15?'#22d3ee':'#34d399'; }
-function statusColor(s){ return s==='on'?'#34d399': s==='degraded'?'#fbbf24':'#64748b'; }
-
-function gauge(pct){
-  pct = Math.max(0, Math.min(100, pct||0));
-  const R=34, C=2*Math.PI*R, off=C*(1-pct/100), col=riskColor(pct);
-  return '<svg width="86" height="86" viewBox="0 0 86 86">'
-    + '<circle cx="43" cy="43" r="'+R+'" fill="none" stroke="#1c2638" stroke-width="8"/>'
-    + '<circle cx="43" cy="43" r="'+R+'" fill="none" stroke="'+col+'" stroke-width="8" stroke-linecap="round"'
-    + ' stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 43 43)"/>'
-    + '<text x="43" y="40" text-anchor="middle" font-size="20" font-weight="700" fill="'+col+'">'+Math.round(pct)+'</text>'
-    + '<text x="43" y="56" text-anchor="middle" font-size="9" fill="#64748b">RISQUE %</text></svg>';
+function fanSVG(){
+  return '<svg class="fan" viewBox="0 0 100 100"><g class="blades">'
+    +'<circle cx="50" cy="50" r="9" fill="#22d3ee"/>'
+    +[0,60,120,180,240,300].map(function(a){
+        return '<path transform="rotate('+a+' 50 50)" d="M50 50 C58 30 72 26 80 30 C70 40 62 46 50 50 Z" '
+          +'fill="rgba(34,211,238,.55)" stroke="rgba(34,211,238,.8)" stroke-width="1"/>';}).join('')
+    +'</g></svg>';
+}
+function ring(){
+  return '<svg width="92" height="92" viewBox="0 0 92 92">'
+    +'<circle cx="46" cy="46" r="36" fill="none" stroke="#16223a" stroke-width="9"/>'
+    +'<circle class="arc" cx="46" cy="46" r="36" fill="none" stroke="#34d399" stroke-width="9" stroke-linecap="round"'
+    +' stroke-dasharray="226" stroke-dashoffset="226" transform="rotate(-90 46 46)"/></svg>';
 }
 
-function card(id, m){
-  const tShut = TSHUT[m.role] || 88;
-  const risk = m.risk==null ? null : m.risk;
-  const crit = (risk!=null && risk>=70);
-  const tempPct = Math.max(0, Math.min(100, (m.temp/tShut)*100));
-  const tempCol = m.temp>=tShut*0.95?'#f87171': m.temp>=tShut*0.82?'#fbbf24':'#34d399';
-  const loadPct = Math.round((m.load||0)*100);
-  const fans = (m.fans&&m.fans.length?m.fans:[0,0]).map(function(rpm){
-     return '<div class="fan"><div class="fr" style="color:'+(rpm>0?'#22d3ee':'#64748b')+'">'
-       + (rpm>0?'<span class="spin"></span>':'')+Math.round(rpm)+'</div><div class="fl">RPM</div></div>'; }).join('');
-  return '<div class="card '+(crit?'crit':'')+' '+(m.on?'':'off')+'">'
-    + '<div class="chead"><div><span class="mid">'+id+'</span><span class="pill">'+m.role+'</span></div>'
-    + '<div class="st" style="color:'+statusColor(m.status)+'"><span class="d" style="background:'+statusColor(m.status)+'"></span>'+(m.status||'?').toUpperCase()+'</div></div>'
-    + '<div class="row"><div class="gauge">'+gauge(risk==null?0:risk)+'</div><div class="metrics">'
-    + '<div class="mrow"><span class="lab">Temp&eacute;rature</span><span class="val" style="color:'+tempCol+'">'+m.temp.toFixed(1)+' &deg;C <small style="color:#64748b">/ '+tShut+'</small></span></div>'
-    + '<div class="bar"><i style="width:'+tempPct+'%;background:'+tempCol+'"></i></div>'
-    + '<div class="mrow"><span class="lab">Charge</span><span class="val">'+loadPct+'%</span></div>'
-    + '<div class="bar"><i style="width:'+loadPct+'%;background:#a78bfa"></i></div>'
-    + '<div class="mrow"><span class="lab">Marge au seuil</span><span class="val" style="color:'+tempCol+'">'+(tShut-m.temp).toFixed(1)+' &deg;C</span></div>'
-    + '</div></div><div class="fans">'+fans+'</div></div>';
+function skeleton(id){
+  return '<div class="card" data-card="'+esc(id)+'">'
+   +'<div class="chead"><div><span class="mid">'+esc(id)+'</span><span class="pill role"></span></div>'
+   +'<div class="st"><span class="d"></span><span class="sttxt"></span></div></div>'
+   +'<div class="top">'
+     +'<div class="chassis"><div class="rack"><div class="leds"><i></i><i></i><i></i></div>'
+        +'<span class="fanwrap f0">'+fanSVG()+'</span><span class="fanwrap f1">'+fanSVG()+'</span></div>'
+        +'<div class="mrow" style="margin-top:7px"><span class="lab">Ventilateurs</span><span class="val mono fanrpm"></span></div>'
+     +'</div>'
+     +'<div class="gw">'+ring()+'<div class="lbl"><b class="riskv mono">0</b><span>RISQUE&nbsp;ML</span></div></div>'
+     +'<div class="mcol">'
+       +'<div class="mrow"><span class="lab">Temp&eacute;rature</span><span class="val mono tempv"></span></div><div class="bar"><i class="tempbar"></i></div>'
+       +'<div class="mrow"><span class="lab">Charge</span><span class="val mono loadv"></span></div><div class="bar"><i class="loadbar" style="background:#a78bfa"></i></div>'
+       +'<div class="reco"><span class="t">Consigne IA</span><span class="r mono"><span class="recov">&mdash;</span> <small>RPM</small></span></div>'
+     +'</div>'
+   +'</div>'
+   +'<div class="xai"><div class="h"><span>Explicabilit&eacute; du risque</span><span style="color:#fb6a78">&#9650; pousse</span></div><div class="xbody"></div></div>'
+   +'</div>';
 }
 
-function render(data, live){
-  const b=document.getElementById('badge'), bt=document.getElementById('badgetxt');
-  b.className='badge '+(live?'live':'sim'); bt.textContent= live? ('LIVE — '+(data.source||'cluster')) : 'SIM (hors-ligne)';
-  document.getElementById('cluster').textContent = data.source||'cluster_alpha';
-  document.getElementById('src').textContent = live? ('jumeaux-chauds ('+(data.source||'')+')') : 'simulation locale (démo)';
+function ensure(ids){
+  var g=document.getElementById('grid');
+  if(g.childElementCount!==ids.length || ids.some(function(i){return !g.querySelector('[data-card="'+CSS.escape(i)+'"]');})){
+    g.innerHTML=ids.map(skeleton).join('');
+  }
+}
 
-  const ids=Object.keys(data.byId);
-  const risks=ids.map(function(i){return data.byId[i].risk;}).filter(function(r){return r!=null;});
-  const on=ids.filter(function(i){return data.byId[i].on;}).length;
-  const M=data.metrics||{};
-  document.getElementById('kpi-pue').innerHTML   = M.pue_effective!=null? M.pue_effective.toFixed(3) : '—';
-  document.getElementById('kpi-energy').innerHTML= M.energy_kwh_total!=null? (M.energy_kwh_total.toFixed(3)+' <small>kWh</small>') : '—';
-  document.getElementById('kpi-risk').innerHTML  = risks.length? ('<span style="color:'+riskColor(Math.max.apply(null,risks))+'">'+Math.round(Math.max.apply(null,risks))+'%</span>') : '—';
-  document.getElementById('kpi-on').innerHTML    = on+' <small>/ '+ids.length+'</small>';
-  document.getElementById('kpi-cost').innerHTML  = M.cost_eur_total!=null? (M.cost_eur_total.toFixed(2)+' <small>&euro;</small>') : '—';
+function update(id,m){
+  var c=document.querySelector('[data-card="'+CSS.escape(id)+'"]'); if(!c) return;
+  var tShut=TSHUT[m.role]||88, risk=(m.risk==null?null:m.risk), crit=(risk!=null&&risk>=70), warn=(risk!=null&&risk>=40);
+  c.className='card'+(crit?' crit':warn?' warn':'')+(m.on?'':' off');
+  c.querySelector('.role').textContent=m.role;
+  c.querySelector('.sttxt').textContent=(m.status||'?').toUpperCase();
+  c.querySelector('.sttxt').parentNode.style.color=statusColor(m.status);
+  c.querySelector('.st .d').style.background=statusColor(m.status);
+  // leds
+  var leds=c.querySelectorAll('.leds i');
+  leds.forEach(function(l,i){ l.className=!m.on?'':(warn&&i===0?'warn':'on'); });
+  // fans
+  var rpm=(m.fans&&m.fans.length)?(m.fans.reduce(function(a,b){return a+b;},0)/m.fans.length):0;
+  c.querySelector('.fanrpm').textContent=Math.round(rpm)+' RPM';
+  [0,1].forEach(function(k){
+    var fw=c.querySelector('.f'+k+' .fan'), r=(m.fans&&m.fans[k]!=null)?m.fans[k]:rpm;
+    if(!fw) return;
+    if(r>50){ fw.classList.remove('dead'); var dur=Math.max(0.25,Math.min(4,1800/r));
+      fw.querySelector('.blades').style.animationDuration=dur.toFixed(2)+'s'; }
+    else fw.classList.add('dead');
+  });
+  // risque ring
+  var col=riskColor(risk==null?0:risk), pct=Math.max(0,Math.min(100,risk==null?0:risk));
+  var arc=c.querySelector('.arc'); arc.setAttribute('stroke',col); arc.setAttribute('stroke-dashoffset',(226*(1-pct/100)).toFixed(1));
+  var rv=c.querySelector('.riskv'); rv.textContent=(risk==null?'—':Math.round(risk)); rv.style.color=col;
+  // temp
+  var tCol=m.temp>=tShut*0.95?'#fb6a78':m.temp>=tShut*0.82?'#fbbf24':'#34d399';
+  c.querySelector('.tempv').innerHTML=m.temp.toFixed(1)+' °C <small style="color:#6b80a3">/ '+tShut+'</small>';
+  var tb=c.querySelector('.tempbar'); tb.style.width=Math.min(100,(m.temp/tShut)*100)+'%'; tb.style.background=tCol;
+  // charge
+  c.querySelector('.loadv').textContent=Math.round((m.load||0)*100)+' %';
+  c.querySelector('.loadbar').style.width=Math.round((m.load||0)*100)+'%';
+  // consigne IA
+  c.querySelector('.recov').textContent=(m.rpm_reco==null?'—':m.rpm_reco);
+  // explicabilité
+  var xb=c.querySelector('.xbody'), ex=m.explain||[];
+  if(!ex.length){ xb.innerHTML='<div style="color:#6b80a3;font-size:11px">— modèle linéaire requis —</div>'; }
+  else{
+    var mx=Math.max.apply(null,ex.map(function(e){return Math.abs(e.contribution);}))||1;
+    xb.innerHTML=ex.map(function(e){
+      var pos=e.contribution>=0, w=Math.round(Math.abs(e.contribution)/mx*48);
+      var bar=pos? '<i style="left:50%;width:'+w+'%;background:linear-gradient(90deg,#fb6a78,#f472b6)"></i>'
+                 : '<i style="right:50%;width:'+w+'%;background:linear-gradient(90deg,#34d399,#22d3ee)"></i>';
+      return '<div class="xrow"><span class="xf">'+esc(e.feature)+'</span>'
+        +'<span class="xbar"><span class="mid0"></span>'+bar+'</span>'
+        +'<span class="xv mono">'+e.value+'</span></div>';
+    }).join('');
+  }
+}
 
-  document.getElementById('grid').innerHTML = ids.map(function(i){return card(i,data.byId[i]);}).join('');
+function render(data,live){
+  var b=document.getElementById('badge');
+  b.className='badge '+(live?'live':'sim');
+  document.getElementById('badgetxt').textContent=live?('LIVE — '+(data.source||'cluster')):'SIM (hors-ligne)';
+  document.getElementById('cluster').textContent=data.source||'cluster_alpha';
+  document.getElementById('src').textContent=live?('jumeaux-chauds ('+(data.source||'')+')'):'simulation locale (démo)';
+  var ids=Object.keys(data.byId), M=data.metrics||{};
+  var risks=ids.map(function(i){return data.byId[i].risk;}).filter(function(r){return r!=null;});
+  var on=ids.filter(function(i){return data.byId[i].on;}).length;
+  document.getElementById('kpi-pue').innerHTML   =M.pue_effective!=null?M.pue_effective.toFixed(3):'—';
+  document.getElementById('kpi-energy').innerHTML=M.energy_kwh_total!=null?(M.energy_kwh_total.toFixed(3)+' <small>kWh</small>'):'—';
+  document.getElementById('kpi-risk').innerHTML  =risks.length?('<span style="color:'+riskColor(Math.max.apply(null,risks))+'">'+Math.round(Math.max.apply(null,risks))+'%</span>'):'—';
+  document.getElementById('kpi-on').innerHTML    =on+' <small>/ '+ids.length+'</small>';
+  document.getElementById('kpi-cost').innerHTML  =M.cost_eur_total!=null?(M.cost_eur_total.toFixed(2)+' <small>€</small>'):'—';
+  ensure(ids); ids.forEach(function(i){ update(i,data.byId[i]); });
 }
 
 function demo(){
-  const r=function(a,b){return a+Math.random()*(b-a);};
-  const mk=function(role,t,risk,st){return {temp:t,load:r(.4,.8),on:st!=='off',status:st,role:role,
-     fans:st==='off'?[0,0]:[Math.round(r(1500,3800)),Math.round(r(1500,3800))],risk:risk};};
-  return {source:'démo', metrics:{pue_effective:1.18,energy_kwh_total:r(2,6),cost_eur_total:r(.4,1.2)},
-    byId:{'srv-master-01':mk('master',r(46,58),r(2,18),'on'),'srv-master-02':mk('master',r(46,58),r(2,18),'on'),
-          'srv-worker-01':mk('worker',r(58,80),r(20,72),'on'),'srv-worker-02':mk('worker',r(50,66),r(8,40),'on'),
+  var r=function(a,b){return a+Math.random()*(b-a);};
+  var ex=function(up){ return [
+    {feature:'Volatilité 30s',value:+r(.2,3).toFixed(2),contribution:+(up?r(.4,1.2):r(.05,.2)).toFixed(3)},
+    {feature:'Marge au seuil',value:+r(8,30).toFixed(1),contribution:+(up?-r(.3,.8):-r(.4,1)).toFixed(3)},
+    {feature:'Δ temp 30s',value:+r(-1,4).toFixed(2),contribution:+(up?r(.2,.7):r(-.1,.1)).toFixed(3)},
+    {feature:'Durée zone chaude',value:+r(0,40).toFixed(0),contribution:+(up?r(.1,.5):0).toFixed(3)},
+    {feature:'Charge',value:+r(.4,.9).toFixed(2),contribution:+r(-.2,.3).toFixed(3)}];};
+  var mk=function(role,t,risk,st){return {temp:t,load:r(.4,.85),on:st!=='off',status:st,role:role,
+    fans:st==='off'?[0,0]:[Math.round(r(1500,3900)),Math.round(r(1500,3900))],
+    risk:risk,rpm_reco:[800,1500,2500,3500,4500][Math.min(4,Math.floor(risk/20))],explain:ex(risk>40)};};
+  return {source:'démo',metrics:{pue_effective:1.18,energy_kwh_total:r(2,6),cost_eur_total:r(.4,1.2)},
+    byId:{'srv-master-01':mk('master',r(48,60),r(3,15),'on'),'srv-master-02':mk('master',r(48,60),r(3,15),'on'),
+          'srv-worker-01':mk('worker',r(74,84),r(48,82),'on'),'srv-worker-02':mk('worker',r(58,70),r(15,42),'on'),
           'srv-worker-03':mk('worker',22,0,'off')}};
 }
 
 async function poll(){
   try{
-    const r=await fetch('/api/live',{cache:'no-store'});
-    if(!r.ok) throw 0;
-    const j=await r.json();
-    if(!j.byId || !Object.keys(j.byId).length) throw 0;
-    render(j, true);
-  }catch(e){ render(demo(), false); }
+    var r=await fetch('/api/live',{cache:'no-store'}); if(!r.ok) throw 0;
+    var j=await r.json(); if(!j.byId||!Object.keys(j.byId).length) throw 0;
+    render(j,true);
+  }catch(e){ render(demo(),false); }
 }
-poll(); setInterval(poll, 2000);
+poll(); setInterval(poll,2000);
 </script>
 </body>
 </html>

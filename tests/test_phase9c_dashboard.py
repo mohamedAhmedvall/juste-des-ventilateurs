@@ -41,6 +41,11 @@ class _FakePredictor:
         return np.array([[0.27, 0.73]])  # risque 73 %
 
 
+class _FakeController:
+    def decide_batch(self, X, risk_scores=None):
+        return np.array([3500])
+
+
 class TestBuildLive:
 
     def test_maps_core_fields(self):
@@ -53,9 +58,15 @@ class TestBuildLive:
         assert a["role"] == "worker"
         assert a["fans"] == [3200, 3100]
         assert a["risk"] is None          # pas de prédicteur -> risk None
+        assert a["explain"] == []         # pas de modèle linéaire -> pas d'explicabilité
+        assert a["rpm_reco"] is None      # pas de contrôleur
         # métriques cluster propagées (pour les KPI du dashboard)
         assert out["metrics"]["pue_effective"] == pytest.approx(1.18)
         assert out["metrics"]["energy_kwh_total"] == pytest.approx(3.2)
+
+    def test_rpm_reco_from_controller(self):
+        out = build_live(_cluster(), OnlineFeatureBuffer(), None, None, controller=_FakeController())
+        assert out["byId"]["srv-01"]["rpm_reco"] == 3500
 
     def test_off_machine(self):
         out = build_live(_cluster(), OnlineFeatureBuffer(), None, None)
