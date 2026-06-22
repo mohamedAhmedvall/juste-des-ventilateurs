@@ -1,0 +1,107 @@
+{
+  "label": "failure_60s",
+  "n_train": 141428,
+  "n_test": 30312,
+  "controllers": [
+    "baseline_fixed_1500",
+    "baseline_fixed_2500",
+    "baseline_fixed_4500",
+    "baseline_threshold",
+    "baseline_pid",
+    "supervised",
+    "score_controller"
+  ],
+  "results": [
+    {
+      "controller": "baseline_fixed_1500",
+      "n_train": 141428,
+      "n_test": 30312,
+      "mean_rpm": 1500.0,
+      "mean_power_fans_w": 11.111111111111114,
+      "t_mean": 49.0975675247072,
+      "pct_critical": 0.0004948535233570863,
+      "nb_shutdowns": 5,
+      "action_accuracy": 0.31508973343890206,
+      "rpm_mae": 613.3445500131961,
+      "high_rpm_when_dangerous": 0.0
+    },
+    {
+      "controller": "baseline_fixed_2500",
+      "n_train": 141428,
+      "n_test": 30312,
+      "mean_rpm": 2500.0,
+      "mean_power_fans_w": 51.440329218106996,
+      "t_mean": 49.0975675247072,
+      "pct_critical": 0.0004948535233570863,
+      "nb_shutdowns": 5,
+      "action_accuracy": 0.08795196621799947,
+      "rpm_mae": 1326.329506466086,
+      "high_rpm_when_dangerous": 0.0
+    },
+    {
+      "controller": "baseline_fixed_4500",
+      "n_train": 141428,
+      "n_test": 30312,
+      "mean_rpm": 4500.0,
+      "mean_power_fans_w": 300.0,
+      "t_mean": 49.0975675247072,
+      "pct_critical": 0.0004948535233570863,
+      "nb_shutdowns": 5,
+      "action_accuracy": 0.03529955133280549,
+      "rpm_mae": 3144.619292689364,
+      "high_rpm_when_dangerous": 1.0
+    },
+    {
+      "controller": "baseline_threshold",
+      "n_train": 141428,
+      "n_test": 30312,
+      "mean_rpm": 1615.3998416468726,
+      "mean_power_fans_w": 18.974842705818336,
+      "t_mean": 49.0975675247072,
+      "pct_critical": 0.0004948535233570863,
+      "nb_shutdowns": 5,
+      "action_accuracy": 0.3441211401425178,
+      "rpm_mae": 497.9447083663236,
+      "high_rpm_when_dangerous": 0.5317884729649436
+    },
+    {
+      "controller": "baseline_pid",
+      "n_train": 141428,
+      "n_test": 30312,
+      "mean_rpm": 1035.2566640274479,
+      "mean_power_fans_w": 12.043854801694748,
+      "t_mean": 49.0975675247072,
+      "pct_critical": 0.0004948535233570863,
+      "nb_shutdowns": 5,
+      "action_accuracy": 0.053147268408551065,
+      "rpm_mae": 320.1240432831882,
+      "high_rpm_when_dangerous": 0.6042780748663101
+    },
+    {
+      "controller": "supervised",
+      "n_train": 141428,
+      "n_test": 30312,
+      "mean_rpm": 1355.3807073106361,
+      "mean_power_fans_w": 22.38690806286771,
+      "t_mean": 49.0975675247072,
+      "pct_critical": 0.0004948535233570863,
+      "nb_shutdowns": 5,
+      "action_accuracy": 0.4585972552124571,
+      "rpm_mae": 0.0,
+      "high_rpm_when_dangerous": 0.7427213309566251
+    },
+    {
+      "controller": "score_controller",
+      "n_train": 141428,
+      "n_test": 30312,
+      "mean_rpm": 1033.874373185537,
+      "mean_power_fans_w": 20.541838351650384,
+      "t_mean": 49.0975675247072,
+      "pct_critical": 0.0004948535233570863,
+      "nb_shutdowns": 5,
+      "action_accuracy": 0.03285827395091053,
+      "rpm_mae": 433.0661124307205,
+      "high_rpm_when_dangerous": 0.994058229352347
+    }
+  ]
+}

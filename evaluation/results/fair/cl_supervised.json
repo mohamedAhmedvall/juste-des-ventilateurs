@@ -1,0 +1,24 @@
+{
+  "scenario": "heatwave",
+  "duration_s": 7200.0,
+  "dt_s": 5.0,
+  "speed": 120.0,
+  "results": [
+    {
+      "name": "supervised",
+      "mode": "control",
+      "n_ticks": 875,
+      "n_machines": 5,
+      "nb_shutdowns_cl": 0,
+      "nb_inevitable": 0,
+      "nb_avoidable": 0,
+      "T_mean_cl": 44.5456810128598,
+      "T_max_cl": 71.96501071117473,
+      "rpm_mean_cl": 837.9428571428572,
+      "pue_mean": 1.0001199882372602,
+      "energy_fans_kwh": 0.3449708666666701,
+      "decision_dt_s": 5.0,
+      "energy_saved_vs_max_pct": 98.4
+    }
+  ]
+}

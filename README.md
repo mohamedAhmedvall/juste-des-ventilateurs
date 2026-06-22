@@ -95,7 +95,7 @@ juste-des-ventilateurs/
 │   ├── benchmark.py            # Comparaison offline des contrôleurs
 │   ├── robustness.py           # Tests de robustesse multi-scénarios
 │   ├── fan_control_eval.py     # Évaluation comparative (oracle v1 vs v2)
-│   └── closed_loop_eval.py     # Évaluation boucle fermée + PUE (Phase 9) 🔲
+│   └── closed_loop_eval.py     # Évaluation boucle fermée + PUE (Phase 9) ✅
 │
 ├── notebooks/                  # Analyses et explorations
 │   ├── 01_ingestion_eda.ipynb
@@ -104,7 +104,7 @@ juste-des-ventilateurs/
 │   ├── 04_fan_control.ipynb
 │   ├── 05_evaluation_comparative.ipynb
 │   ├── 06_phase7_mqtt_supervision.ipynb
-│   └── 07_closed_loop_evaluation.ipynb  # Phase 9 🔲
+│   └── 07_closed_loop_evaluation.ipynb  # Phase 9 ✅
 │
 ├── data/                       # Datasets (ignorés par git, sauf schéma)
 │   ├── schema.md               # Description du schéma unifié
@@ -307,14 +307,14 @@ Dans l'évaluation offline, `nb_shutdowns` et `T_mean` sont identiques pour tous
 # Prérequis : jumeaux-chauds en cours d'exécution
 docker compose -f ../jumeaux-chauds/docker-compose.yml up -d
 
-# Comparer les contrôleurs sur le scénario stress (10 min)
+# Comparer les contrôleurs sur le scénario stress
+# (--speed accélère la simulation ; --dt = secondes simulées entre décisions)
 python -m evaluation.closed_loop_eval \
-  --scenario stress \
-  --duration 600 \
-  --controllers native supervised supervised_v2 score_controller baseline_pid
+  --scenario stress --duration 300 --dt 5 --speed 60 \
+  --controllers native supervised score_controller baseline_pid baseline_fixed_4500
 
 # Scénario heatwave (montée T progressive)
-python -m evaluation.closed_loop_eval --scenario heatwave --duration 600
+python -m evaluation.closed_loop_eval --scenario heatwave --duration 300 --speed 60
 
 # Résultats :
 #   evaluation/results/closed_loop_results_stress.json
@@ -330,9 +330,9 @@ jupyter notebook notebooks/07_closed_loop_evaluation.ipynb
 |---------|-------------|
 | `nb_shutdowns_cl` | Arrêts thermiques en boucle fermée |
 | `nb_avoidable_avoided` | Pannes évitables réellement évitées vs natif |
-| `pue_mean` | PUE moyen sur l'épisode (cible < 1.15) |
+| `pue_mean` | PUE moyen sur l'épisode (dérivé de `energy_kwh_cumulated`) |
 | `energy_fans_kwh` | Énergie fans cumulée |
-| `energy_saved_pct` | Économie vs baseline full-speed (%) |
+| `energy_saved_vs_max_pct` | Économie vs ventilation à fond 4500 RPM (%) |
 
 ---
 

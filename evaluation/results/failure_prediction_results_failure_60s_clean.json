@@ -1,0 +1,61 @@
+{
+  "label": "failure_60s",
+  "results": [
+    {
+      "model": "logistic",
+      "label": "failure_60s",
+      "n_train": 138437,
+      "n_val": 27319,
+      "n_test": 30312,
+      "pos_rate_test": 0.05552256532066508,
+      "precision": 0.9248,
+      "recall": 0.9358,
+      "f1": 0.9303,
+      "pr_auc": 0.984,
+      "roc_auc": 0.999,
+      "fn_rate_shutdown": 0.0084,
+      "lead_time": {
+        "mean_s": 14.159195402298854,
+        "median_s": 14.4,
+        "min_s": 0.6,
+        "max_s": 21.6,
+        "n_incidents": 7,
+        "n_detected": 1044
+      },
+      "anticipatory": {
+        "recall": 0.8321,
+        "precision": 0.7383,
+        "n_pos": 417,
+        "n": 22981
+      }
+    },
+    {
+      "model": "random_forest",
+      "label": "failure_60s",
+      "n_train": 138437,
+      "n_val": 27319,
+      "n_test": 30312,
+      "pos_rate_test": 0.05552256532066508,
+      "precision": 0.947,
+      "recall": 0.9982,
+      "f1": 0.9719,
+      "pr_auc": 0.985,
+      "roc_auc": 0.9992,
+      "fn_rate_shutdown": 0.0003,
+      "lead_time": {
+        "mean_s": 13.813205741626799,
+        "median_s": 14.4,
+        "min_s": 0.6,
+        "max_s": 21.0,
+        "n_incidents": 7,
+        "n_detected": 1045
+      },
+      "anticipatory": {
+        "recall": 0.9928,
+        "precision": 0.8214,
+        "n_pos": 417,
+        "n": 22981
+      }
+    }
+  ]
+}

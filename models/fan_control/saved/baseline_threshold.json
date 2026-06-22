@@ -1,0 +1,15 @@
+{
+  "t_low": 68.0,
+  "t_medium": 78.0,
+  "t_high": 85.0,
+  "rpm_idle": 1500,
+  "rpm_low": 2500,
+  "rpm_med": 3500,
+  "rpm_high": 4500,
+  "best_params": {
+    "t_low": 68.0,
+    "t_medium": 78.0,
+    "t_high": 85.0,
+    "score": -0.03594164914695503
+  }
+}

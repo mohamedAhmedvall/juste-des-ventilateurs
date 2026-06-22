@@ -1,0 +1,5 @@
+{
+  "t_warn_c": 80.0,
+  "n_seconds": 0,
+  "recall_target": 0.85
+}

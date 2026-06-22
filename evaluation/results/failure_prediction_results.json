@@ -1,0 +1,93 @@
+{
+  "label": "failure_60s",
+  "results": [
+    {
+      "model": "baseline",
+      "label": "failure_60s",
+      "n_train": 39614,
+      "n_val": 8487,
+      "n_test": 8492,
+      "pos_rate_test": 0.024729156853509186,
+      "precision": 0.5054,
+      "recall": 0.8905,
+      "f1": 0.6448,
+      "pr_auc": 0.1352,
+      "roc_auc": 0.9189,
+      "fn_rate_shutdown": 0.0,
+      "lead_time": {
+        "mean_s": 17.05578947368421,
+        "median_s": 18.0,
+        "min_s": 1.2,
+        "max_s": 27.6,
+        "n_incidents": 1,
+        "n_detected": 190
+      }
+    },
+    {
+      "model": "logistic",
+      "label": "failure_60s",
+      "n_train": 39614,
+      "n_val": 8487,
+      "n_test": 8492,
+      "pos_rate_test": 0.024729156853509186,
+      "precision": 0.6115,
+      "recall": 0.9143,
+      "f1": 0.7328,
+      "pr_auc": 0.9072,
+      "roc_auc": 0.9968,
+      "fn_rate_shutdown": 0.0,
+      "lead_time": {
+        "mean_s": 16.290173410404623,
+        "median_s": 18.0,
+        "min_s": 0.6,
+        "max_s": 27.0,
+        "n_incidents": 1,
+        "n_detected": 173
+      }
+    },
+    {
+      "model": "random_forest",
+      "label": "failure_60s",
+      "n_train": 39614,
+      "n_val": 8487,
+      "n_test": 8492,
+      "pos_rate_test": 0.024729156853509186,
+      "precision": 0.5091,
+      "recall": 0.9333,
+      "f1": 0.6588,
+      "pr_auc": 0.8764,
+      "roc_auc": 0.995,
+      "fn_rate_shutdown": 0.0,
+      "lead_time": {
+        "mean_s": 16.42122905027933,
+        "median_s": 18.0,
+        "min_s": 0.6,
+        "max_s": 27.6,
+        "n_incidents": 1,
+        "n_detected": 179
+      }
+    },
+    {
+      "model": "gradient_boosting",
+      "label": "failure_60s",
+      "n_train": 39614,
+      "n_val": 8487,
+      "n_test": 8492,
+      "pos_rate_test": 0.024729156853509186,
+      "precision": 0.9722,
+      "recall": 1.0,
+      "f1": 0.9859,
+      "pr_auc": 0.9936,
+      "roc_auc": 0.9999,
+      "fn_rate_shutdown": 0.0,
+      "lead_time": {
+        "mean_s": 16.66421052631579,
+        "median_s": 18.0,
+        "min_s": 1.2,
+        "max_s": 27.6,
+        "n_incidents": 1,
+        "n_detected": 190
+      }
+    }
+  ]
+}

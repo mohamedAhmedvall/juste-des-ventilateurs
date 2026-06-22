@@ -1,0 +1,55 @@
+{
+  "episode_id": "001",
+  "scenario": "stress",
+  "collected_at": "2026-06-21T18:57:13.075273+00:00",
+  "duration_s": 100.677781,
+  "n_records": 34429,
+  "schema_version": "1.0",
+  "storage_format": "parquet",
+  "output_dir": "data/raw/episode=001",
+  "ts_start_real": "2026-06-21T18:55:31.958474+00:00",
+  "ts_end_real": "2026-06-21T18:57:12.636255+00:00",
+  "ts_sim_start": "2005-01-01T00:13:02.400000+00:00",
+  "ts_sim_end": "2005-01-01T01:21:16.800000+00:00",
+  "sim_duration_s": 4094.4,
+  "machines": {
+    "srv-master-01": {
+      "role": "master",
+      "t_shutdown_c": 90.0,
+      "t_restart_c": 55.0,
+      "fan_max_rpm": 5000,
+      "fan_count": 2
+    },
+    "srv-master-02": {
+      "role": "master",
+      "t_shutdown_c": 90.0,
+      "t_restart_c": 55.0,
+      "fan_max_rpm": 5000,
+      "fan_count": 2
+    },
+    "srv-worker-01": {
+      "role": "worker",
+      "t_shutdown_c": 88.0,
+      "t_restart_c": 50.0,
+      "fan_max_rpm": 5000,
+      "fan_count": 2
+    },
+    "srv-worker-02": {
+      "role": "worker",
+      "t_shutdown_c": 88.0,
+      "t_restart_c": 50.0,
+      "fan_max_rpm": 5000,
+      "fan_count": 2
+    },
+    "srv-worker-03": {
+      "role": "worker",
+      "t_shutdown_c": 88.0,
+      "t_restart_c": 50.0,
+      "fan_max_rpm": 5000,
+      "fan_count": 2
+    }
+  },
+  "cluster_id": "cluster_alpha",
+  "broker_host": "localhost",
+  "broker_port": 1883
+}

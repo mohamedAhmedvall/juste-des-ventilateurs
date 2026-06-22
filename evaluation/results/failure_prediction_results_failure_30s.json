@@ -1,0 +1,117 @@
+{
+  "label": "failure_30s",
+  "results": [
+    {
+      "model": "baseline",
+      "label": "failure_30s",
+      "n_train": 138437,
+      "n_val": 27319,
+      "n_test": 30312,
+      "pos_rate_test": 0.048693586698337295,
+      "precision": 0.6248,
+      "recall": 0.7053,
+      "f1": 0.6626,
+      "pr_auc": 0.1588,
+      "roc_auc": 0.8517,
+      "fn_rate_shutdown": 0.0428,
+      "lead_time": {
+        "mean_s": 14.315696202531647,
+        "median_s": 14.4,
+        "min_s": 13.8,
+        "max_s": 31.2,
+        "n_incidents": 7,
+        "n_detected": 790
+      },
+      "anticipatory": {
+        "recall": 1.0,
+        "precision": 0.2518,
+        "n_pos": 210,
+        "n": 22981
+      }
+    },
+    {
+      "model": "logistic",
+      "label": "failure_30s",
+      "n_train": 138437,
+      "n_val": 27319,
+      "n_test": 30312,
+      "pos_rate_test": 0.048693586698337295,
+      "precision": 0.9446,
+      "recall": 0.9824,
+      "f1": 0.9631,
+      "pr_auc": 0.9968,
+      "roc_auc": 0.9998,
+      "fn_rate_shutdown": 0.0026,
+      "lead_time": {
+        "mean_s": 14.031773667029382,
+        "median_s": 14.4,
+        "min_s": 3.0,
+        "max_s": 18.0,
+        "n_incidents": 7,
+        "n_detected": 919
+      },
+      "anticipatory": {
+        "recall": 0.8762,
+        "precision": 0.7023,
+        "n_pos": 210,
+        "n": 22981
+      }
+    },
+    {
+      "model": "random_forest",
+      "label": "failure_30s",
+      "n_train": 138437,
+      "n_val": 27319,
+      "n_test": 30312,
+      "pos_rate_test": 0.048693586698337295,
+      "precision": 0.9794,
+      "recall": 0.9993,
+      "f1": 0.9893,
+      "pr_auc": 0.9983,
+      "roc_auc": 0.9999,
+      "fn_rate_shutdown": 0.0001,
+      "lead_time": {
+        "mean_s": 13.646905537459286,
+        "median_s": 14.4,
+        "min_s": 1.2,
+        "max_s": 18.0,
+        "n_incidents": 7,
+        "n_detected": 921
+      },
+      "anticipatory": {
+        "recall": 0.9952,
+        "precision": 0.8856,
+        "n_pos": 210,
+        "n": 22981
+      }
+    },
+    {
+      "model": "gradient_boosting",
+      "label": "failure_30s",
+      "n_train": 138437,
+      "n_val": 27319,
+      "n_test": 30312,
+      "pos_rate_test": 0.048693586698337295,
+      "precision": 0.9711,
+      "recall": 1.0,
+      "f1": 0.9853,
+      "pr_auc": 0.9987,
+      "roc_auc": 0.9999,
+      "fn_rate_shutdown": 0.0,
+      "lead_time": {
+        "mean_s": 13.725081433224759,
+        "median_s": 14.4,
+        "min_s": 1.2,
+        "max_s": 18.0,
+        "n_incidents": 7,
+        "n_detected": 921
+      },
+      "anticipatory": {
+        "recall": 1.0,
+        "precision": 0.8367,
+        "n_pos": 210,
+        "n": 22981
+      }
+    }
+  ]
+}
