@@ -91,6 +91,19 @@
   .reco .t{font-size:10px;color:#c9b8ff;text-transform:uppercase;letter-spacing:.7px}
   .reco .r{font-size:17px;font-weight:800;color:#d6c8ff}
   .reco .r small{font-size:11px;color:var(--mut);font-weight:600}
+  /* contrôles de pilotage */
+  .ctrl{display:flex;align-items:center;gap:6px;margin-top:11px;flex-wrap:wrap}
+  .ctrl .cl{font-size:9.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.7px;margin-right:3px}
+  .ctrl button{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;color:#a9c2e6;background:#0c1730;
+    border:1px solid var(--bd);border-radius:8px;padding:5px 9px;cursor:pointer;transition:.15s}
+  .ctrl button:hover{border-color:var(--cyan);color:#fff;box-shadow:0 0 10px rgba(34,211,238,.3)}
+  .ctrl button.sel{background:rgba(34,211,238,.18);border-color:var(--cyan);color:#fff}
+  .ctrl button.auto{color:#c9b8ff;border-color:rgba(167,139,250,.4)}
+  .ap{display:flex;align-items:center;gap:9px;padding:8px 15px;border-radius:999px;font-weight:800;font-size:12px;
+    letter-spacing:.6px;cursor:pointer;border:1px solid var(--bd);background:rgba(167,139,250,.10);color:#c9b8ff;transition:.25s}
+  .ap:hover{border-color:var(--pur)}
+  .ap.on{background:rgba(52,211,153,.16);border-color:var(--grn);color:var(--grn);box-shadow:0 0 22px rgba(52,211,153,.28)}
+  .hdr-r{display:flex;align-items:center;gap:12px}
   /* explicabilité */
   .xai{margin-top:13px;border-top:1px dashed var(--bd);padding-top:11px}
   .xai .h{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;display:flex;justify-content:space-between}
@@ -114,7 +127,10 @@
         <p>Poste de pilotage thermique &mdash; <span id="cluster" class="mono">cluster_alpha</span></p>
       </div>
     </div>
-    <div id="badge" class="badge sim"><span class="dot"></span><span id="badgetxt">SIM (hors-ligne)</span></div>
+    <div class="hdr-r">
+      <button id="autopilot" class="ap"><span>&#128752;</span><span id="aptxt">AUTO-PILOTE&nbsp;: OFF</span></button>
+      <div id="badge" class="badge sim"><span class="dot"></span><span id="badgetxt">SIM (hors-ligne)</span></div>
+    </div>
   </header>
 
   <div class="kpis">
@@ -169,6 +185,10 @@ function skeleton(id){
        +'<div class="reco"><span class="t">Consigne IA</span><span class="r mono"><span class="recov">&mdash;</span> <small>RPM</small></span></div>'
      +'</div>'
    +'</div>'
+   +'<div class="ctrl"><span class="cl">Pilotage</span>'
+     +'<button data-act="auto" class="auto">AUTO</button>'
+     +[800,1500,2500,3500,4500].map(function(v){return '<button data-act="rpm" data-rpm="'+v+'">'+v+'</button>';}).join('')
+   +'</div>'
    +'<div class="xai"><div class="h"><span>Explicabilit&eacute; du risque</span><span style="color:#fb6a78">&#9650; pousse</span></div><div class="xbody"></div></div>'
    +'</div>';
 }
@@ -194,6 +214,8 @@ function update(id,m){
   // fans
   var rpm=(m.fans&&m.fans.length)?(m.fans.reduce(function(a,b){return a+b;},0)/m.fans.length):0;
   c.querySelector('.fanrpm').textContent=Math.round(rpm)+' RPM';
+  var lvl=[800,1500,2500,3500,4500].reduce(function(p,v){return Math.abs(v-rpm)<Math.abs(p-rpm)?v:p;},800);
+  c.querySelectorAll('.ctrl button[data-rpm]').forEach(function(btn){ btn.classList.toggle('sel', m.on && (+btn.dataset.rpm)===lvl); });
   [0,1].forEach(function(k){
     var fw=c.querySelector('.f'+k+' .fan'), r=(m.fans&&m.fans[k]!=null)?m.fans[k]:rpm;
     if(!fw) return;
@@ -245,7 +267,33 @@ function render(data,live){
   document.getElementById('kpi-on').innerHTML    =on+' <small>/ '+ids.length+'</small>';
   document.getElementById('kpi-cost').innerHTML  =M.cost_eur_total!=null?(M.cost_eur_total.toFixed(2)+' <small>€</small>'):'—';
   ensure(ids); ids.forEach(function(i){ update(i,data.byId[i]); });
+  setAuto(!!data.autopilot);
 }
+
+// --- pilotage actif : commandes vers jumeaux-chauds via le pont ---
+async function cmd(mid, payload){
+  try{ await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify(Object.assign({machine_id:mid},payload))}); poll(); }catch(e){}
+}
+function setAuto(on){
+  var b=document.getElementById('autopilot'); if(!b) return;
+  b.classList.toggle('on',!!on);
+  document.getElementById('aptxt').innerHTML='AUTO-PILOTE&nbsp;: '+(on?'ON':'OFF');
+}
+async function toggleAuto(){
+  var on=!document.getElementById('autopilot').classList.contains('on');
+  setAuto(on);
+  try{ await fetch('/api/autopilot',{method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({enabled:on})}); }catch(e){}
+}
+document.getElementById('autopilot').addEventListener('click',toggleAuto);
+document.getElementById('grid').addEventListener('click',function(e){
+  var btn=e.target.closest('button[data-act]'); if(!btn) return;
+  var card=e.target.closest('.card'); if(!card) return;
+  var mid=card.getAttribute('data-card');
+  if(btn.getAttribute('data-act')==='auto') cmd(mid,{mode:'auto'});
+  else cmd(mid,{rpm:+btn.getAttribute('data-rpm')});
+});
 
 function demo(){
   var r=function(a,b){return a+Math.random()*(b-a);};

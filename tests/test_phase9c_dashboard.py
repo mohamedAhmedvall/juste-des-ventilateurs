@@ -16,8 +16,21 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from dashboard.noc_bridge import build_live
+from dashboard.noc_bridge import build_live, command_machine, BridgeState
 from supervisor.online_features import OnlineFeatureBuffer
+
+
+class _RecordClient:
+    """Faux client jumeaux-chauds qui enregistre les commandes."""
+    def __init__(self):
+        self.speed_calls = []
+        self.mode_calls = []
+    def set_fan_speed(self, mid, rpm, fan_indices=None):
+        self.speed_calls.append((mid, int(rpm))); return True
+    def set_fan_mode(self, mid, mode, fan_indices=None):
+        self.mode_calls.append((mid, mode)); return True
+    def get_cluster_status(self):
+        return {}
 
 
 def _cluster():
@@ -90,3 +103,31 @@ class TestBuildLive:
         # l'erreur du prédicteur ne casse pas le payload -> risk None
         assert out["byId"]["srv-01"]["risk"] is None
         assert out["byId"]["srv-01"]["temp"] == pytest.approx(71.5)
+
+
+class TestPilotage:
+
+    def test_command_rpm_sets_manual_then_speed(self):
+        c = _RecordClient()
+        assert command_machine(c, "srv-01", rpm=3500) is True
+        assert ("srv-01", "manual") in c.mode_calls
+        assert ("srv-01", 3500) in c.speed_calls
+
+    def test_command_mode_auto(self):
+        c = _RecordClient()
+        command_machine(c, "srv-01", mode="auto")
+        assert c.mode_calls == [("srv-01", "auto")]
+        assert c.speed_calls == []
+
+    def test_autopilot_applies_reco_to_on_machines(self):
+        c = _RecordClient()
+        st = BridgeState(c, None, None, None, None)
+        payload = {"byId": {
+            "srv-01": {"on": True,  "rpm_reco": 4500},
+            "srv-02": {"on": False, "rpm_reco": 800},   # off -> ignorée
+            "srv-03": {"on": True,  "rpm_reco": None},  # pas de reco -> ignorée
+        }}
+        n = st.apply_autopilot(payload)
+        assert n == 1
+        assert ("srv-01", 4500) in c.speed_calls
+        assert all(mid != "srv-02" for mid, _ in c.speed_calls)

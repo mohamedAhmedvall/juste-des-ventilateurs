@@ -23,6 +23,8 @@ import argparse
 import json
 import logging
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -155,28 +157,104 @@ def build_live(cluster: dict, buffer, predictor, feature_order, controller=None)
     }
 
 
+def command_machine(client, machine_id: str, rpm: int | None = None, mode: str | None = None) -> bool:
+    """Envoie une commande de ventilation à jumeaux-chauds (pilotage actif).
+
+    - mode="auto"  : repasse les fans en régulation native.
+    - rpm fourni   : bascule en manuel puis applique la consigne RPM.
+    Fonction fine et testable (client mockable).
+    """
+    ok = True
+    if mode is not None:
+        ok = client.set_fan_mode(machine_id, mode) and ok
+    if rpm is not None:
+        ok = client.set_fan_mode(machine_id, "manual") and ok
+        ok = client.set_fan_speed(machine_id, int(rpm)) and ok
+    return ok
+
+
+class BridgeState:
+    """État partagé du pont : modèles, dernier instantané, mode auto-pilote."""
+    def __init__(self, client, buffer, predictor, feature_order, controller):
+        self.client = client
+        self.buffer = buffer
+        self.predictor = predictor
+        self.feature_order = feature_order
+        self.controller = controller
+        self.latest: dict = {"byId": {}}
+        self.autopilot = False
+        self.lock = threading.Lock()
+
+    def refresh(self) -> dict:
+        cluster = self.client.get_cluster_status()
+        payload = build_live(cluster, self.buffer, self.predictor,
+                             self.feature_order, controller=self.controller)
+        payload["autopilot"] = self.autopilot
+        with self.lock:
+            self.latest = payload
+        return payload
+
+    def apply_autopilot(self, payload: dict) -> int:
+        """Applique la consigne du contrôleur (rpm_reco) à chaque machine active.
+        Retourne le nombre de commandes envoyées."""
+        n = 0
+        for mid, m in payload.get("byId", {}).items():
+            if m.get("on") and m.get("rpm_reco") is not None:
+                command_machine(self.client, mid, rpm=m["rpm_reco"])
+                n += 1
+        return n
+
+
+def run_loop(state: BridgeState, interval: float = 2.0):
+    """Boucle de fond : rafraîchit l'état et, si l'auto-pilote est actif,
+    applique les consignes du contrôleur (la boucle de décision live)."""
+    while True:
+        try:
+            payload = state.refresh()
+            if state.autopilot:
+                state.apply_autopilot(payload)
+        except Exception as e:  # pragma: no cover
+            logger.debug("loop: %s", e)
+        time.sleep(interval)
+
+
 class _Handler(BaseHTTPRequestHandler):
-    client = None
-    buffer = None
-    predictor = None
-    feature_order = None
-    controller = None
+    state: BridgeState = None
 
     def log_message(self, *a):  # silence per-request logs
         pass
 
     def do_GET(self):
         if self.path.startswith("/api/live"):
-            self._live()
+            self._json(self.state.latest if self.state.latest.get("byId") else self.state.refresh())
         elif self.path in ("/", "/index.html", "/noc.html"):
             self._html()
         else:
             self.send_error(404)
 
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        try:
+            body = json.loads(self.rfile.read(n) or b"{}")
+        except Exception:
+            body = {}
+        if self.path.startswith("/api/command"):
+            mid = body.get("machine_id")
+            if not mid:
+                self._json({"ok": False, "error": "machine_id requis"}, 400); return
+            ok = command_machine(self.state.client, mid,
+                                 rpm=body.get("rpm"), mode=body.get("mode"))
+            self._json({"ok": bool(ok)})
+        elif self.path.startswith("/api/autopilot"):
+            self.state.autopilot = bool(body.get("enabled"))
+            logger.info("auto-pilote %s", "ACTIVÉ" if self.state.autopilot else "désactivé")
+            self._json({"ok": True, "autopilot": self.state.autopilot})
+        else:
+            self.send_error(404)
+
     def _html(self):
         if not NOC_HTML.exists():
-            self.send_error(500, "noc.html introuvable")
-            return
+            self.send_error(500, "noc.html introuvable"); return
         body = NOC_HTML.read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -184,16 +262,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _live(self):
-        try:
-            cluster = self.client.get_cluster_status()
-            payload = build_live(cluster, self.buffer, self.predictor,
-                                 self.feature_order, controller=self.controller)
-            body = json.dumps(payload).encode()
-            self.send_response(200)
-        except Exception as e:
-            body = json.dumps({"error": str(e), "byId": {}}).encode()
-            self.send_response(502)
+    def _json(self, obj, code=200):
+        body = json.dumps(obj).encode()
+        self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
@@ -208,6 +279,8 @@ def main() -> None:
     parser.add_argument("--api-url", default="http://localhost:8000")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--label", default="failure_60s")
+    parser.add_argument("--interval", type=float, default=2.0,
+                        help="cadence (s) de la boucle de rafraîchissement / pilotage")
     args = parser.parse_args()
 
     from supervisor.supervisor import JumeauxClient, load_predictor
@@ -215,21 +288,25 @@ def main() -> None:
 
     from supervisor.supervisor import load_controller
 
-    _Handler.client = JumeauxClient(args.api_url)
-    _Handler.buffer = OnlineFeatureBuffer()
-    _Handler.predictor = load_predictor("logistic", args.label)
-    _Handler.controller = load_controller("supervised")
-    if _Handler.predictor is not None:
+    predictor = load_predictor("logistic", args.label)
+    controller = load_controller("supervised")
+    feature_order = None
+    if predictor is not None:
         try:
             from models.failure_prediction.splitter import TemporalSplitter
-            _Handler.feature_order = list(TemporalSplitter().split()[0].columns)
+            feature_order = list(TemporalSplitter().split()[0].columns)
         except Exception as e:
             logger.warning("ordre des features indisponible : %s", e)
-    logger.info("predictor %s | controller %s | dashboard sur http://localhost:%d",
-                "chargé" if _Handler.predictor else "absent (risk=null)",
-                "chargé" if _Handler.controller else "absent",
-                args.port)
 
+    _Handler.state = BridgeState(
+        client=JumeauxClient(args.api_url), buffer=OnlineFeatureBuffer(),
+        predictor=predictor, feature_order=feature_order, controller=controller,
+    )
+    threading.Thread(target=run_loop, args=(_Handler.state, args.interval), daemon=True).start()
+
+    logger.info("predictor %s | controller %s | dashboard sur http://localhost:%d (pilotage actif)",
+                "chargé" if predictor else "absent (risk=null)",
+                "chargé" if controller else "absent", args.port)
     ThreadingHTTPServer(("0.0.0.0", args.port), _Handler).serve_forever()
 
 
