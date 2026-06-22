@@ -47,6 +47,25 @@ _FEAT_LABELS = {
     "rpm_rolling_mean_30s": "RPM moy 30s",
 }
 
+# Explications lisibles (légende) de chaque feature, envoyées au dashboard
+_FEAT_DESC = {
+    "temperature_c": "Température CPU courante (°C)",
+    "sensor_temp_max": "Température max parmi les sondes (°C)",
+    "temp_delta_5s": "Variation de température sur 5 s",
+    "temp_delta_15s": "Variation de température sur 15 s",
+    "temp_delta_30s": "Variation de température sur 30 s (vitesse de montée)",
+    "temp_rolling_std_30s": "Instabilité thermique : écart-type de T sur 30 s",
+    "temp_rolling_mean_30s": "Température moyenne glissante sur 30 s",
+    "margin_to_shutdown": "Marge avant l'arrêt thermique (°C) — bas = risqué",
+    "margin_delta_30s": "Vitesse d'approche du seuil d'arrêt",
+    "load_estimated": "Charge de calcul estimée (0–1)",
+    "load_rolling_mean_30s": "Charge moyenne sur 30 s",
+    "time_in_hot_zone_s": "Temps passé en zone chaude (>80 % du seuil), en s",
+    "power_w": "Puissance électrique consommée (W)",
+    "fan_rpm_mean": "Vitesse moyenne des ventilateurs (RPM)",
+    "rpm_rolling_mean_30s": "RPM moyen glissant sur 30 s",
+}
+
 
 def _explain(predictor, X, topn: int = 5) -> list[dict]:
     """Contributions des features au risque (régression logistique).
@@ -84,6 +103,7 @@ def _explain(predictor, X, topn: int = 5) -> list[dict]:
                 continue
             out.append({
                 "feature": _FEAT_LABELS.get(names[i], names[i]),
+                "desc": _FEAT_DESC.get(names[i], "Feature du modèle de prédiction"),
                 "value": round(float(x[i]), 2),
                 "contribution": round(float(contrib[i]), 3),
             })
@@ -155,6 +175,33 @@ def build_live(cluster: dict, buffer, predictor, feature_order, controller=None)
         "metrics": cluster.get("metrics", {}),
         "byId": by_id,
     }
+
+
+def change_scenario(client, scenario: str, speed: float | None = None) -> bool:
+    """Change le scénario du simulateur jumeaux-chauds (injection depuis le dashboard).
+
+    PUT /simulation/scenario, remet le temps/énergie à zéro, et règle la vitesse.
+    Utilise la session httpx du client si dispo (testable via un faux client).
+    """
+    base = getattr(client, "base_url", "")
+    sess = getattr(client, "_client", None)
+
+    def _send(method: str, path: str, body: dict | None = None) -> bool:
+        url = f"{base}{path}"
+        try:
+            if sess is not None:
+                return sess.request(method, url, json=body).status_code < 300
+            import httpx
+            return httpx.request(method, url, json=body, timeout=10.0).status_code < 300
+        except Exception as e:  # pragma: no cover - réseau
+            logger.warning("%s %s : %s", method, path, e)
+            return False
+
+    ok = _send("PUT", "/simulation/scenario", {"scenario": scenario})
+    _send("POST", "/simulation/speed/reset")
+    if speed:
+        _send("PUT", "/simulation/speed", {"speed_multiplier": speed})
+    return ok
 
 
 def command_machine(client, machine_id: str, rpm: int | None = None, mode: str | None = None) -> bool:
@@ -249,6 +296,13 @@ class _Handler(BaseHTTPRequestHandler):
             self.state.autopilot = bool(body.get("enabled"))
             logger.info("auto-pilote %s", "ACTIVÉ" if self.state.autopilot else "désactivé")
             self._json({"ok": True, "autopilot": self.state.autopilot})
+        elif self.path.startswith("/api/scenario"):
+            sc = body.get("scenario")
+            if not sc:
+                self._json({"ok": False, "error": "scenario requis"}, 400); return
+            ok = change_scenario(self.state.client, sc, speed=body.get("speed"))
+            logger.info("scénario injecté : %s (ok=%s)", sc, ok)
+            self._json({"ok": bool(ok), "scenario": sc})
         else:
             self.send_error(404)
 

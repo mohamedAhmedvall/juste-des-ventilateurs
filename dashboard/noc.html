@@ -77,6 +77,27 @@
   .rackbar .tag{font:700 11px ui-monospace,monospace;letter-spacing:1.2px;color:#9fe3ff;
     border:1px solid rgba(34,211,238,.3);border-radius:6px;padding:3px 9px;background:rgba(34,211,238,.06)}
   .rackbar .meta{color:var(--mut);font-size:12px;letter-spacing:.4px}
+  /* sélecteur de scénarios (injection depuis le dashboard) */
+  .scen{margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .scen .sl{font-size:9.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.8px}
+  .scen button{font-family:ui-monospace,monospace;font-size:11px;font-weight:600;color:#cbb68f;background:#0c1730;
+    border:1px solid var(--bd);border-radius:8px;padding:5px 10px;cursor:pointer;transition:.15s}
+  .scen button:hover{border-color:var(--amb);color:#fff;box-shadow:0 0 10px rgba(251,191,36,.28)}
+  .scen button.sel{background:rgba(251,191,36,.18);border-color:var(--amb);color:#fff}
+  /* légende des features */
+  .legend{margin-top:18px;background:var(--panel);border:1px solid var(--bd);border-radius:14px;
+    padding:0 16px;backdrop-filter:blur(8px)}
+  .legend summary{cursor:pointer;padding:13px 0;font-weight:700;font-size:12.5px;letter-spacing:.4px;color:#bcd6f5;list-style:none}
+  .legend summary::-webkit-details-marker{display:none}
+  .legend summary::before{content:"▸ ";color:var(--cyan)}
+  .legend[open] summary::before{content:"▾ "}
+  .legend .read{color:var(--mut);font-size:11.5px;margin:0 0 12px;line-height:1.6}
+  .legend .read b.up{color:var(--red)} .legend .read b.dn{color:var(--grn)}
+  .legend .glos{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px 22px;padding-bottom:16px}
+  .legend .gi{display:flex;gap:8px;font-size:11.5px;align-items:baseline}
+  .legend .gi b{color:#9fe3ff;font-weight:700;white-space:nowrap;min-width:108px}
+  .legend .gi span{color:var(--mut)}
+  .xrow{cursor:help}
   .gw{flex:0 0 auto;position:relative}
   .gw .lbl{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center}
   .gw .lbl b{display:block;font-size:21px;font-weight:800;line-height:1}
@@ -147,8 +168,36 @@
   <div class="rackbar">
     <span class="tag">&#9638; RACK A</span>
     <span class="meta" id="rackmeta">cluster_alpha</span>
+    <span class="scen" id="scen"><span class="sl">Sc&eacute;nario</span>
+      <button data-scen="basic">basic</button>
+      <button data-scen="nominal">nominal</button>
+      <button data-scen="busy_weeks">busy_weeks</button>
+      <button data-scen="stress">stress</button>
+      <button data-scen="heatwave">heatwave</button>
+    </span>
   </div>
   <div class="grid" id="grid"></div>
+
+  <details class="legend">
+    <summary>&#8505; L&eacute;gende des features (explicabilit&eacute; du risque)</summary>
+    <p class="read">Le panneau <b>Explicabilit&eacute;</b> de chaque machine montre les features qui p&egrave;sent le plus sur le risque pr&eacute;dit.
+      Barre <b class="up">rouge &#9654;</b> = la feature <b class="up">pousse vers la panne</b> ; barre <b class="dn">verte &#9664;</b> = elle <b class="dn">rassure</b>.
+      La valeur &agrave; droite est la mesure courante. Survole une ligne pour son explication.</p>
+    <div class="glos">
+      <div class="gi"><b>Température</b><span>Température CPU courante (°C)</span></div>
+      <div class="gi"><b>Capteur max</b><span>Température max parmi les sondes (°C)</span></div>
+      <div class="gi"><b>Δ temp 5/15/30s</b><span>Variation de température sur N secondes (vitesse de montée)</span></div>
+      <div class="gi"><b>Volatilité 30s</b><span>Instabilité thermique : écart-type de T sur 30 s</span></div>
+      <div class="gi"><b>Temp moy 30s</b><span>Température moyenne glissante sur 30 s</span></div>
+      <div class="gi"><b>Marge au seuil</b><span>Écart restant avant l'arrêt thermique (°C) — bas = risqué</span></div>
+      <div class="gi"><b>Vitesse vers seuil</b><span>Vitesse d'approche du seuil d'arrêt</span></div>
+      <div class="gi"><b>Charge</b><span>Charge de calcul estimée (0–1)</span></div>
+      <div class="gi"><b>Charge moy 30s</b><span>Charge moyenne glissante sur 30 s</span></div>
+      <div class="gi"><b>Durée zone chaude</b><span>Temps passé au-dessus de 80 % du seuil (s)</span></div>
+      <div class="gi"><b>Puissance</b><span>Puissance électrique consommée (W)</span></div>
+      <div class="gi"><b>RPM moyen / 30s</b><span>Vitesse moyenne des ventilateurs (RPM)</span></div>
+    </div>
+  </details>
 
   <footer>Source&nbsp;: <b id="src">simulation locale</b> &middot; risque &amp; explicabilit&eacute; : r&eacute;gression logistique
     (contribution = coefficient &times; feature standardis&eacute;e) &middot; consigne&nbsp;: contr&ocirc;leur supervis&eacute; &middot; seuil 88&ndash;92&nbsp;&deg;C</footer>
@@ -280,7 +329,8 @@ function update(id,m){
       var pos=e.contribution>=0, w=Math.round(Math.abs(e.contribution)/mx*48);
       var bar=pos? '<i style="left:50%;width:'+w+'%;background:linear-gradient(90deg,#fb6a78,#f472b6)"></i>'
                  : '<i style="right:50%;width:'+w+'%;background:linear-gradient(90deg,#34d399,#22d3ee)"></i>';
-      return '<div class="xrow"><span class="xf">'+esc(e.feature)+'</span>'
+      var tip=esc(e.feature+(e.desc?' — '+e.desc:''));
+      return '<div class="xrow" title="'+tip+'"><span class="xf">'+esc(e.feature)+'</span>'
         +'<span class="xbar"><span class="mid0"></span>'+bar+'</span>'
         +'<span class="xv mono">'+e.value+'</span></div>';
     }).join('');
@@ -331,14 +381,26 @@ document.getElementById('grid').addEventListener('click',function(e){
   else cmd(mid,{rpm:+btn.getAttribute('data-rpm')});
 });
 
+// --- injection de scénario depuis le dashboard ---
+async function setScenario(sc){
+  document.querySelectorAll('#scen button').forEach(function(b){ b.classList.toggle('sel', b.getAttribute('data-scen')===sc); });
+  try{ await fetch('/api/scenario',{method:'POST',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({scenario:sc, speed:60})}); }catch(e){}
+  setTimeout(poll, 900);
+}
+document.getElementById('scen').addEventListener('click',function(e){
+  var b=e.target.closest('button[data-scen]'); if(!b) return;
+  setScenario(b.getAttribute('data-scen'));
+});
+
 function demo(){
   var r=function(a,b){return a+Math.random()*(b-a);};
   var ex=function(up){ return [
-    {feature:'Volatilité 30s',value:+r(.2,3).toFixed(2),contribution:+(up?r(.4,1.2):r(.05,.2)).toFixed(3)},
-    {feature:'Marge au seuil',value:+r(8,30).toFixed(1),contribution:+(up?-r(.3,.8):-r(.4,1)).toFixed(3)},
-    {feature:'Δ temp 30s',value:+r(-1,4).toFixed(2),contribution:+(up?r(.2,.7):r(-.1,.1)).toFixed(3)},
-    {feature:'Durée zone chaude',value:+r(0,40).toFixed(0),contribution:+(up?r(.1,.5):0).toFixed(3)},
-    {feature:'Charge',value:+r(.4,.9).toFixed(2),contribution:+r(-.2,.3).toFixed(3)}];};
+    {feature:'Volatilité 30s',desc:'Instabilité thermique : écart-type de T sur 30 s',value:+r(.2,3).toFixed(2),contribution:+(up?r(.4,1.2):r(.05,.2)).toFixed(3)},
+    {feature:'Marge au seuil',desc:"Écart restant avant l'arrêt thermique (°C) — bas = risqué",value:+r(8,30).toFixed(1),contribution:+(up?-r(.3,.8):-r(.4,1)).toFixed(3)},
+    {feature:'Δ temp 30s',desc:'Variation de température sur 30 s (vitesse de montée)',value:+r(-1,4).toFixed(2),contribution:+(up?r(.2,.7):r(-.1,.1)).toFixed(3)},
+    {feature:'Durée zone chaude',desc:'Temps passé au-dessus de 80 % du seuil (s)',value:+r(0,40).toFixed(0),contribution:+(up?r(.1,.5):0).toFixed(3)},
+    {feature:'Charge',desc:'Charge de calcul estimée (0–1)',value:+r(.4,.9).toFixed(2),contribution:+r(-.2,.3).toFixed(3)}];};
   var mk=function(role,t,risk,st){return {temp:t,load:r(.4,.85),on:st!=='off',status:st,role:role,
     fans:st==='off'?[0,0]:[Math.round(r(1500,3900)),Math.round(r(1500,3900))],
     risk:risk,rpm_reco:[800,1500,2500,3500,4500][Math.min(4,Math.floor(risk/20))],explain:ex(risk>40)};};

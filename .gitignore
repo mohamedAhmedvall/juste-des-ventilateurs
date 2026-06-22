@@ -245,3 +245,5 @@ supervisor/logs/
 
 # Docker volumes locaux
 timescale_data/
+.claude/settings.local.json
+.playwright-mcp/

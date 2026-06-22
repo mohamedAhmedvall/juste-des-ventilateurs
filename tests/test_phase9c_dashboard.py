@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from dashboard.noc_bridge import build_live, command_machine, BridgeState
+from dashboard.noc_bridge import build_live, command_machine, change_scenario, BridgeState
 from supervisor.online_features import OnlineFeatureBuffer
 
 
@@ -131,3 +131,36 @@ class TestPilotage:
         assert n == 1
         assert ("srv-01", 4500) in c.speed_calls
         assert all(mid != "srv-02" for mid, _ in c.speed_calls)
+
+
+class _ScenClient:
+    """Faux client avec base_url + session httpx-like enregistrant les requêtes."""
+    def __init__(self):
+        self.base_url = "http://x:8000"
+        self.calls = []
+        self._client = self
+    def request(self, method, url, json=None):
+        self.calls.append((method, url, json))
+        return type("R", (), {"status_code": 200})()
+
+
+class TestScenario:
+
+    def test_change_scenario_hits_api(self):
+        c = _ScenClient()
+        ok = change_scenario(c, "heatwave", speed=60)
+        assert ok is True
+        paths = [u for _, u, _ in c.calls]
+        assert any(u.endswith("/simulation/scenario") for u in paths)
+        assert any(u.endswith("/simulation/speed/reset") for u in paths)
+        assert any(u.endswith("/simulation/speed") for u in paths)
+        # le scénario est bien transmis
+        scen = next(j for _, u, j in c.calls if u.endswith("/simulation/scenario"))
+        assert scen == {"scenario": "heatwave"}
+
+    def test_change_scenario_no_speed(self):
+        c = _ScenClient()
+        change_scenario(c, "stress")
+        paths = [u for _, u, _ in c.calls]
+        assert any(u.endswith("/simulation/scenario") for u in paths)
+        assert not any(u.endswith("/simulation/speed") and not u.endswith("reset") for u in paths)
